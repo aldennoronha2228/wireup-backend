@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { getAppConfig, loadEnvironment } from "@wireup/config";
 import {
   StorageProjectCreateRequestSchema,
   StorageProjectUpdateRequestSchema,
@@ -26,10 +27,12 @@ import { randomUUID } from "crypto";
 import { getDatabase, getMongoClient, withRetry } from "./db.js";
 import type { Collection, WithId, Document } from "mongodb";
 
+loadEnvironment();
 const serviceName = "storage";
 const runtimeConfig = getRuntimeConfig(serviceName);
 const logger = createLogger(serviceName);
 const metrics = createMetricsCollector();
+const appConfig = getAppConfig();
 
 const app = new Hono();
 

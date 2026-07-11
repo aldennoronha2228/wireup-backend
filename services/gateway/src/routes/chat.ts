@@ -1,14 +1,9 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { GatewayRequestSchema } from "@wireup/schemas";
-import { ServiceClient } from "@wireup/utils";
 import type { StreamEvent } from "@wireup/types";
 
 export const chatRoutes = new Hono();
-
-const orchestratorClient = new ServiceClient({
-  baseUrl: process.env.ORCHESTRATOR_URL || "http://localhost:3001",
-});
 
 chatRoutes.post("/", async (c) => {
   const body = await c.req.json();

@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { getAppConfig, loadEnvironment } from "@wireup/config";
 import { orchestrateRoutes } from "./routes/orchestrate.js";
 import {
   createCommonMiddleware,
@@ -12,10 +13,12 @@ import {
   registerMetricsRoute,
 } from "@wireup/utils";
 
+loadEnvironment();
 const serviceName = "orchestrator";
 const runtimeConfig = getRuntimeConfig(serviceName);
 const logger = createLogger(serviceName);
 const metrics = createMetricsCollector();
+const appConfig = getAppConfig();
 
 const app = new Hono();
 
@@ -28,7 +31,7 @@ registerHealthRoutes(app, serviceName);
 registerMetricsRoute(app, metrics, serviceName);
 
 const port = runtimeConfig.port;
-logger.info("service_starting", { port });
+logger.info("service_starting", { port, envFile: appConfig.runtime.envFile });
 
 const server = serve({
   fetch: app.fetch,

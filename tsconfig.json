@@ -11,12 +11,15 @@
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
+    "types": ["node"],
+    "ignoreDeprecations": "5.0",
     "baseUrl": ".",
     "paths": {
       "@wireup/types": ["packages/types/src/index.ts"],
       "@wireup/utils": ["packages/utils/src/index.ts"],
       "@wireup/schemas": ["packages/schemas/src/index.ts"],
-      "@wireup/shared": ["packages/shared/src/index.ts"]
+      "@wireup/shared": ["packages/shared/src/index.ts"],
+      "@wireup/ngspice": ["services/ngspice/src/index.ts"]
     }
   },
   "include": ["packages/**/*", "services/**/*"],

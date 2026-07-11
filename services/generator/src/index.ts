@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { getAppConfig, loadEnvironment } from "@wireup/config";
 import { GeneratorRequestSchema } from "@wireup/schemas";
 import type { ApiResponse, GeneratorResponse } from "@wireup/types";
 import {
@@ -14,10 +15,12 @@ import {
 } from "@wireup/utils";
 import { buildGeneratorOutput } from "./generator.js";
 
+loadEnvironment();
 const serviceName = "generator";
 const runtimeConfig = getRuntimeConfig(serviceName);
 const logger = createLogger(serviceName);
 const metrics = createMetricsCollector();
+const appConfig = getAppConfig();
 
 const app = new Hono();
 
@@ -53,7 +56,7 @@ registerHealthRoutes(app, serviceName);
 registerMetricsRoute(app, metrics, serviceName);
 
 const port = runtimeConfig.port;
-logger.info("service_starting", { port });
+logger.info("service_starting", { port, envFile: appConfig.runtime.envFile });
 
 const server = serve({
   fetch: app.fetch,

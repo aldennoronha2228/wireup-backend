@@ -6,6 +6,7 @@ import { randomUUID } from "crypto";
 import type {
   Component,
   GeneratorResponse,
+  SimulationJson,
 } from "@wireup/types";
 
 interface VelxioComponentMeta {
@@ -155,6 +156,39 @@ const buildVelxioCircuit = async (generatorOutput: GeneratorResponse) => {
 
   return {
     board_fqbn,
+    components,
+    connections,
+    version: 1,
+  } satisfies VelxioCircuit;
+};
+
+export const buildVelxioCircuitFromSimulationJson = async (
+  simulationJson: SimulationJson,
+): Promise<VelxioCircuit> => {
+  const components = await Promise.all(
+    simulationJson.components.map(async (component, index) => {
+      const tagName = component.type.includes("led") ? "wokwi-led" : "wokwi-pushbutton";
+      return {
+        id: component.id,
+        type: tagName,
+        left: 120 + (index % 3) * 140,
+        top: 120 + Math.floor(index / 3) * 120,
+        rotate: 0,
+        attrs: component.properties,
+      };
+    }),
+  );
+
+  const connections = simulationJson.connections.map((connection) => ({
+    from_part: connection.from.componentId,
+    from_pin: connection.from.pin,
+    to_part: connection.to.componentId,
+    to_pin: connection.to.pin,
+    color: "#00ff00",
+  }));
+
+  return {
+    board_fqbn: "arduino:avr:uno",
     components,
     connections,
     version: 1,

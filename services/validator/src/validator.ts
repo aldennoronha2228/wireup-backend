@@ -6,38 +6,8 @@ import {
   type ValidationWarning,
   type ValidatorResponse,
 } from "@wireup/types";
-import { ServiceClient } from "@wireup/utils";
-
-interface NgspiceIssue {
-  code: string;
-  message: string;
-  details?: Record<string, unknown>;
-}
-
-interface NgspiceResponse {
-  errors: NgspiceIssue[];
-  warnings: NgspiceIssue[];
-  voltages: Record<string, number>;
-  currents: Record<string, number>;
-  summary: {
-    status: "valid" | "invalid";
-    totalErrors: number;
-    totalWarnings: number;
-    ngspiceExitCode: number | null;
-  };
-}
-
-interface NgspiceRequest {
-  circuitId?: string;
-  components: GeneratorResponse["componentList"];
-  connections: GeneratorResponse["wiring"]["connections"];
-  board: {
-    platform: string;
-    voltage?: number;
-    groundPins?: string[];
-    powerPins?: string[];
-  };
-}
+import type { NgspiceRequest, NgspiceResponse, NgspiceServiceLike } from "@wireup/ngspice";
+import { NgspiceService } from "@wireup/ngspice";
 
 const buildNgspiceRequest = (generatorOutput: GeneratorResponse): NgspiceRequest => ({
   circuitId: generatorOutput.projectMetadata.title,
@@ -48,7 +18,7 @@ const buildNgspiceRequest = (generatorOutput: GeneratorResponse): NgspiceRequest
   },
 });
 
-const mapIssueToError = (issue: NgspiceIssue): ValidationError => {
+const mapIssueToError = (issue: NgspiceResponse["errors"][number]): ValidationError => {
   const code = issue.code.toLowerCase();
   if (code.includes("floating") || code.includes("open")) {
     return {
@@ -78,7 +48,7 @@ const mapIssueToError = (issue: NgspiceIssue): ValidationError => {
   };
 };
 
-const mapIssueToWarning = (issue: NgspiceIssue): ValidationWarning => {
+const mapIssueToWarning = (issue: NgspiceResponse["warnings"][number]): ValidationWarning => {
   return {
     type: ValidationWarningType.POTENTIAL_NOISE,
     message: issue.message,
@@ -88,18 +58,11 @@ const mapIssueToWarning = (issue: NgspiceIssue): ValidationWarning => {
 
 export const validateElectrical = async (
   generatorOutput: GeneratorResponse,
-  service?: ServiceClient,
+  service?: NgspiceServiceLike,
 ): Promise<ValidatorResponse> => {
-  const client =
-    service ||
-    new ServiceClient({
-      baseUrl: process.env.NGSPICE_URL || "http://localhost:3010",
-    });
+  const ngspice = service || new NgspiceService();
 
-  const ngspiceResponse = await client.post<NgspiceResponse>(
-    "/api/ngspice/validate",
-    buildNgspiceRequest(generatorOutput),
-  );
+  const ngspiceResponse = await ngspice.validate(buildNgspiceRequest(generatorOutput));
 
   const errors: ValidationError[] = ngspiceResponse.errors.map(mapIssueToError);
   const warnings: ValidationWarning[] = ngspiceResponse.warnings.map(mapIssueToWarning);

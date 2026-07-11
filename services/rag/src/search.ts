@@ -38,7 +38,8 @@ export const reciprocalRankFusion = (lists: SearchResult[][], k = 60) => {
       const score = 1 / (k + index + 1);
       const existing = scores.get(result.id) ?? 0;
       scores.set(result.id, existing + score);
-      if (!items.has(result.id)) {
+      const existingItem = items.get(result.id);
+      if (!existingItem || result.score > existingItem.score) {
         items.set(result.id, result);
       }
     });

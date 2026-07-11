@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { validateElectrical } from "./validator.js";
 import type { GeneratorResponse } from "@wireup/types";
-import { ServiceClient } from "@wireup/utils";
+import type { NgspiceServiceLike } from "@wireup/ngspice";
 
 const baseGeneratorOutput: GeneratorResponse = {
   firmware: {
@@ -65,8 +65,8 @@ const baseGeneratorOutput: GeneratorResponse = {
 describe("validateElectrical", () => {
   const mockService = (payload: unknown) =>
     ({
-      post: async () => payload,
-    }) as unknown as ServiceClient;
+      validate: async () => payload,
+    }) as unknown as NgspiceServiceLike;
 
   it("returns valid result when no errors", async () => {
     const result = await validateElectrical(

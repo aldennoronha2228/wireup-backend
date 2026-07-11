@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { getAppConfig, loadEnvironment } from "@wireup/config";
 import { SimulatorRequestSchema } from "@wireup/schemas";
 import type { ApiResponse, SimulatorResponse, StorageProject } from "@wireup/types";
 import {
@@ -16,10 +17,12 @@ import {
 import { runVelxioSimulation } from "./velxio.js";
 import { buildVelxioAssets } from "./velxio-adapter.js";
 
+loadEnvironment();
 const serviceName = "simulator";
 const runtimeConfig = getRuntimeConfig(serviceName);
 const logger = createLogger(serviceName);
 const metrics = createMetricsCollector();
+const appConfig = getAppConfig();
 
 const app = new Hono();
 
@@ -125,7 +128,7 @@ registerHealthRoutes(app, serviceName);
 registerMetricsRoute(app, metrics, serviceName);
 
 const port = runtimeConfig.port;
-logger.info("service_starting", { port });
+logger.info("service_starting", { port, envFile: appConfig.runtime.envFile });
 
 const server = serve({
   fetch: app.fetch,

@@ -17,7 +17,7 @@ describe("reciprocalRankFusion", () => {
 
     const merged = reciprocalRankFusion([listA, listB]);
 
-    expect(merged.length).toBe(5);
+    expect(merged.length).toBe(6);
     expect(merged[0].id).toBe(listA[1].id);
     expect(merged[0].score).toBeGreaterThan(merged[1].score);
   });

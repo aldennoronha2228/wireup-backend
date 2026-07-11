@@ -1,7 +1,8 @@
 import { spawn } from "child_process";
 import { writeFile, rm } from "fs/promises";
-import { join } from "path";
+import { dirname, join } from "path";
 import { tmpdir } from "os";
+import { fileURLToPath } from "url";
 
 export interface NgspiceExecution {
   exitCode: number | null;
@@ -12,10 +13,14 @@ export interface NgspiceExecution {
 const timeoutMs = Number(process.env.NGSPICE_TIMEOUT_MS) || 8000;
 
 export const runNgspice = async (netlist: string): Promise<NgspiceExecution> => {
-  const bin =
-    process.env.NGSPICE_BIN ||
-    join(process.cwd(), "vendor", "ngspice", "build", "dist", "bin", "ngspice");
+  const baseDir = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    process.env.NGSPICE_BIN,
+    join(process.cwd(), "vendor", "ngspice", "build", "dist", "bin", "ngspice"),
+    join(baseDir, "..", "..", "..", "vendor", "ngspice", "build", "dist", "bin", "ngspice"),
+  ].filter((value): value is string => Boolean(value));
 
+  const bin = candidates.find((candidate) => candidate.endsWith("ngspice") || candidate.endsWith("ngspice.exe"));
   const filePath = join(tmpdir(), `wireup-ngspice-${Date.now()}.cir`);
   await writeFile(filePath, netlist, "utf8");
 

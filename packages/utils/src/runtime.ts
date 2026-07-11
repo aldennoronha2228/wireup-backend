@@ -18,15 +18,41 @@ export interface MetricsSnapshot {
   statusCodes: Record<string, number>;
 }
 
-export const getRuntimeConfig = (serviceName: string): RuntimeConfig => ({
-  serviceName,
-  port: Number(process.env.PORT) || 3000,
-  requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS) || 45000,
-  rateLimitMax: Number(process.env.RATE_LIMIT_MAX) || 120,
-  rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
-  logLevel: (process.env.LOG_LEVEL as RuntimeConfig["logLevel"]) || "info",
-  metricsEnabled: process.env.ENABLE_METRICS !== "false",
-});
+const getServicePortEnvironmentVariable = (serviceName: string) => {
+  return `${serviceName.toUpperCase().replace(/-/g, "_")}_PORT`;
+};
+
+const getDefaultPortForService = (serviceName: string) => {
+  const defaults: Record<string, number> = {
+    gateway: 3000,
+    orchestrator: 3001,
+    rag: 3002,
+    planner: 3003,
+    generator: 3004,
+    validator: 3005,
+    simulator: 3006,
+    storage: 3007,
+    "context-builder": 3008,
+    ngspice: 3009,
+  };
+
+  return defaults[serviceName] ?? 3000;
+};
+
+export const getRuntimeConfig = (serviceName: string): RuntimeConfig => {
+  const portEnvName = getServicePortEnvironmentVariable(serviceName);
+  const configuredPort = Number(process.env[portEnvName] ?? getDefaultPortForService(serviceName));
+
+  return {
+    serviceName,
+    port: Number.isFinite(configuredPort) && configuredPort > 0 ? configuredPort : getDefaultPortForService(serviceName),
+    requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS) || 45000,
+    rateLimitMax: Number(process.env.RATE_LIMIT_MAX) || 120,
+    rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
+    logLevel: (process.env.LOG_LEVEL as RuntimeConfig["logLevel"]) || "info",
+    metricsEnabled: process.env.ENABLE_METRICS !== "false",
+  };
+};
 
 export const createLogger = (serviceName: string) => {
   const log = (level: RuntimeConfig["logLevel"], message: string, details?: Record<string, unknown>) => {

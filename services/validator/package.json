@@ -13,6 +13,8 @@
   "license": "MIT",
   "dependencies": {
     "@hono/node-server": "^1.12.0",
+    "@wireup/config": "workspace:*",
+    "@wireup/ngspice": "workspace:*",
     "@wireup/schemas": "workspace:*",
     "@wireup/types": "workspace:*",
     "@wireup/utils": "workspace:*",

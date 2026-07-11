@@ -12,7 +12,8 @@ import {
 } from "@wireup/utils";
 import type { RagConfig } from "./config.js";
 import { dedupeResults, hybridSearch, knowledgeGraphSearch, rerankResults } from "./search.js";
-import { getMongoClient } from "./mongo.js";
+import { getMongoClient, getMongoHealthReport } from "./mongo.js";
+import { buildVendorSearchSummary } from "./vendorAdapter.js";
 
 export const createApp = (config: RagConfig) => {
   const app = new Hono();
@@ -47,7 +48,7 @@ export const createApp = (config: RagConfig) => {
     );
 
     try {
-      const client = await getMongoClient(config);
+      const client = await getMongoClient(config, logger);
       const db = client.db(config.mongodbDatabase);
       const chunkCollection = db.collection(config.mongodbCollectionChunks);
       const knowledgeGraphCollection = db.collection(
@@ -69,8 +70,13 @@ export const createApp = (config: RagConfig) => {
       const knowledgeGraphResults =
         kgResult.status === "fulfilled" ? kgResult.value : [];
 
+      const summary = buildVendorSearchSummary(
+        hybridResults,
+        knowledgeGraphResults,
+        matchCount,
+      );
       const combined = rerankResults(
-        dedupeResults([...hybridResults, ...knowledgeGraphResults]),
+        dedupeResults(summary.results),
       ).slice(0, matchCount);
 
       const response: RagResponse = {
@@ -102,22 +108,22 @@ export const createApp = (config: RagConfig) => {
   });
 
   app.get("/health", async (c) => {
-    try {
-      const client = await getMongoClient(config);
-      await client.db(config.mongodbDatabase).command({ ping: 1 });
-      return c.json({ success: true, data: { status: "ok", mongo: "ok" } });
-    } catch (error) {
-      return c.json(
-        {
-          success: false,
-          error: {
-            code: "MONGO_UNAVAILABLE",
-            message: "MongoDB connection failed",
-          },
-        },
-        503,
-      );
+    const mongo = await getMongoHealthReport(config, logger);
+
+    if (mongo.connected) {
+      return c.json({
+        success: true,
+        mongo,
+      });
     }
+
+    return c.json(
+      {
+        success: false,
+        mongo,
+      },
+      503,
+    );
   });
 
   registerHealthRoutes(app, "rag");

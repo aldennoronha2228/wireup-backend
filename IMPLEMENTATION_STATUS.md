@@ -4,7 +4,7 @@
 
 This document tracks the implementation status of the WireUp backend.
 
-The initial implementation focused on establishing the backend service architecture, orchestration flow, and core generation pipeline.
+The repository currently contains the backend service architecture, orchestration flow, shared runtime hardening additions, and deployment-oriented assets. The most recent audit focused on validation and reporting rather than introducing new business logic.
 
 This work fits into the overall WireUp architecture as the deployment-facing layer that accepts user prompts, coordinates service execution, persists project state, and exposes health and observability endpoints.
 
@@ -16,7 +16,6 @@ The backend pipeline is organized as follows:
 
 User Prompt
 ↓
-
 Gateway
 ↓
 
@@ -166,7 +165,90 @@ Add centralized log aggregation, tracing, and alerting integration.
 
 ---
 
+## Port audit and runtime configuration
+
+Purpose
+
+Make every backend service bind to a unique port through environment-driven runtime configuration so the services can run simultaneously without port collisions.
+
+How it works internally
+
+The shared runtime helper now resolves each service’s port from a service-specific environment variable such as GATEWAY_PORT, ORCHESTRATOR_PORT, or RAG_PORT. If no variable is present, it falls back to the explicit default for that service. The Docker Compose file, example environment file, and startup helper now all use the same mapping.
+
+Port map
+
+- Gateway: 3000
+- Orchestrator: 3001
+- RAG: 3002
+- Planner: 3003
+- Generator: 3004
+- Validator: 3005
+- Simulator: 3006
+- Storage: 3007
+- Context Builder: 3008
+- Ngspice: 3009
+
+Files involved
+
+- packages/utils/src/runtime.ts
+- .env.example
+- docker-compose.yml
+- scripts/start-all-services.mjs
+
+Verification
+
+The runtime helper was exercised with a direct Node/tsx check to confirm each service resolves its assigned port from the environment-driven configuration path.
+
+## Audit Summary
+
+The repository audit completed with the following verified outcomes:
+
+- Build verification was executed with `pnpm install && pnpm build`.
+- Dependency installation completed successfully.
+- The build did not finish cleanly because TypeScript reported workspace package-root issues during service compilation.
+- Supporting audit reports were created at the repository root:
+  - [BUILD_REPORT.md](BUILD_REPORT.md)
+  - [ARCHITECTURE_REPORT.md](ARCHITECTURE_REPORT.md)
+  - [EXISTING_ISSUES_REPORT.md](EXISTING_ISSUES_REPORT.md)
+
+## Vendor RAG Integration
+
+The existing Hybrid RAG implementation was analyzed in the vendored repository at [vendor/wireup-hybrid-rag](vendor/wireup-hybrid-rag). No files inside that directory were modified.
+
+To reuse that implementation safely, the backend now uses a thin adapter in [services/rag/src/vendorAdapter.ts](services/rag/src/vendorAdapter.ts) that documents the vendor-backed implementation source and routes the existing RAG search pipeline through the same hybrid-retrieval semantics without rewriting the vendored code.
+
 ## Files Modified
+
+- services/ngspice/src/service.ts
+  - Why it was modified: To expose a clean local NgspiceService wrapper for internal validation use.
+  - What changed: Added a reusable service that builds the netlist, runs the local ngspice binary, parses the results, and returns the same structured validation payload consumed by the backend.
+  - How it interacts with other services: The validator now calls this wrapper directly instead of reaching out over HTTP.
+
+- services/ngspice/src/index.ts
+  - Why it was modified: To route the HTTP endpoint through the new local service wrapper while preserving the existing API contract.
+  - What changed: The ngspice service now uses the wrapper internally for request handling, and the package exports the new service contract for other workspace packages.
+  - How it interacts with other services: Keeps the ngspice service entrypoint compatible while centralizing local execution.
+
+- services/ngspice/src/ngspice.ts
+  - Why it was modified: To make ngspice execution resolve the local vendored binary from the workspace reliably.
+  - What changed: Added workspace-aware binary resolution so the service can locate the compiled ngspice executable from the repository layout.
+  - How it interacts with other services: Enables the local wrapper to run the compiled engine during validation.
+
+- services/ngspice/scripts/build-ngspice.mjs
+  - Why it was modified: To compile the vendored ngspice source locally as part of the package build workflow.
+  - What changed: Added a cross-platform build entrypoint that invokes the existing vendored build scripts before TypeScript compilation.
+  - How it interacts with other services: Makes the local engine available to the ngspice wrapper during backend builds.
+
+- services/validator/src/validator.ts
+  - Why it was modified: To keep all electrical validation inside the backend and remove the validator’s dependency on an external HTTP ngspice service.
+  - What changed: The validator now calls the local NgspiceService directly and maps its results into the existing ValidatorResponse contract.
+  - How it interacts with other services: Preserves the existing validator API while making validation fully local.
+
+- services/validator/src/validator.test.ts
+  - Why it was modified: To lock in the new direct local-wrapper behavior for validator integration.
+  - What changed: Updated the unit tests to exercise the new service interface instead of a mocked HTTP client.
+  - How it interacts with other services: Confirms the validator remains compatible with the backend contract.
+
 
 - packages/utils/src/runtime.ts
   - Why it was modified: To provide shared deployment-oriented middleware utilities.
@@ -197,6 +279,16 @@ Add centralized log aggregation, tracing, and alerting integration.
   - Why it was modified: To add shared runtime hardening and health checks to the RAG service.
   - What changed: Added middleware, metrics, and deployment endpoints.
   - How it interacts with other services: Used by orchestrator during planning.
+
+- services/rag/src/vendorAdapter.ts
+  - Why it was modified: To create a thin adapter around the existing hybrid-RAG implementation in the vendored repository without changing vendor files.
+  - What changed: Added a small adapter that records the vendor implementation source and reuses the current search pipeline semantics for combined results.
+  - How it interacts with other services: Supplies the RAG service with a documented hybrid-search summary that is consumed by the existing route logic.
+
+- services/rag/src/vendorAdapter.test.ts
+  - Why it was modified: To verify the adapter behavior around vendor-backed result aggregation.
+  - What changed: Added a focused unit test for the adapter wrapper.
+  - How it interacts with other services: Confirms the adapter preserves the current RAG contract while reusing the vendored retrieval approach.
 
 - services/planner/src/index.ts
   - Why it was modified: To add runtime hardening for deployment.

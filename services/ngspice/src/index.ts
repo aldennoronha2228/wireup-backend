@@ -1,11 +1,10 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { getAppConfig, loadEnvironment } from "@wireup/config";
+import { pathToFileURL } from "url";
 import { NgspiceRequestSchema, type NgspiceResponse } from "./schema.js";
-import { buildNetlist } from "./netlist.js";
-import { parseNgspiceOutput } from "./parser.js";
-import { runNgspice } from "./ngspice.js";
-import { analyzeCircuit } from "./analyze.js";
+import { NgspiceService } from "./service.js";
 import {
   createCommonMiddleware,
   createLogger,
@@ -16,10 +15,16 @@ import {
   registerMetricsRoute,
 } from "@wireup/utils";
 
+export { NgspiceService, type NgspiceServiceLike } from "./service.js";
+export type { NgspiceRequest, NgspiceResponse } from "./schema.js";
+
+loadEnvironment();
 const serviceName = "ngspice";
 const runtimeConfig = getRuntimeConfig(serviceName);
 const logger = createLogger(serviceName);
 const metrics = createMetricsCollector();
+const appConfig = getAppConfig();
+const ngspiceService = new NgspiceService();
 
 const app = new Hono();
 
@@ -54,82 +59,26 @@ app.post("/api/ngspice/validate", async (c) => {
     );
   }
 
-  const { netlist, powerVoltage } = buildNetlist(parsed.data);
-  const issues = {
-    errors: [] as NgspiceResponse["errors"],
-    warnings: [] as NgspiceResponse["warnings"],
-  };
+  const response = await ngspiceService.validate(parsed.data);
 
-  if (!netlist) {
-    issues.errors.push({
-      code: "NETLIST_EMPTY",
-      message: "Netlist could not be generated",
-    });
-  }
-
-  const result = await runNgspice(netlist);
-  const output = `${result.stdout}\n${result.stderr}`.trim();
-  const parsedOutput = parseNgspiceOutput(output);
-
-  if (result.exitCode !== 0) {
-    issues.errors.push({
-      code: "NGSPICE_FAILED",
-      message: "ngspice execution failed",
-      details: { output },
-    });
-  }
-
-  parsedOutput.warnings.forEach((warning) => {
-    issues.warnings.push({
-      code: "NGSPICE_WARNING",
-      message: warning,
-    });
-  });
-
-  if (Object.keys(parsedOutput.voltages).length === 0) {
-    issues.warnings.push({
-      code: "NO_VOLTAGES",
-      message: "ngspice produced no voltage data",
-    });
-  }
-
-  const analysis = analyzeCircuit(
-    parsed.data,
-    output,
-    parsedOutput.voltages,
-    parsedOutput.currents,
-  );
-
-  issues.errors.push(...analysis.errors);
-  issues.warnings.push(...analysis.warnings);
-
-  const summary = {
-    status: issues.errors.length === 0 ? "valid" : "invalid",
-    totalErrors: issues.errors.length,
-    totalWarnings: issues.warnings.length,
-    ngspiceExitCode: result.exitCode,
-    powerVoltage,
-    suggestedFixes: analysis.suggestedFixes,
-  };
-
-  return c.json({
-    errors: issues.errors,
-    warnings: issues.warnings,
-    voltages: parsedOutput.voltages,
-    currents: parsedOutput.currents,
-    summary,
-  } satisfies NgspiceResponse);
+  return c.json(response satisfies NgspiceResponse);
 });
 
 registerHealthRoutes(app, serviceName);
 registerMetricsRoute(app, metrics, serviceName);
 
-const port = runtimeConfig.port;
-logger.info("service_starting", { port });
+const startServer = () => {
+  const port = runtimeConfig.port;
+  logger.info("service_starting", { port, envFile: appConfig.runtime.envFile });
 
-const server = serve({
-  fetch: app.fetch,
-  port,
-});
+  const server = serve({
+    fetch: app.fetch,
+    port,
+  });
 
-registerGracefulShutdown(server as any, logger);
+  registerGracefulShutdown(server as any, logger);
+};
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  startServer();
+}
