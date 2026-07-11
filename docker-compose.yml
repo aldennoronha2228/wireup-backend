@@ -1,0 +1,152 @@
+version: "3.9"
+services:
+  gateway:
+    build: .
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      LOG_LEVEL: info
+      REQUEST_TIMEOUT_MS: 45000
+      RATE_LIMIT_MAX: 120
+      RATE_LIMIT_WINDOW_MS: 60000
+      ENABLE_METRICS: "true"
+      ORCHESTRATOR_URL: http://orchestrator:3001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - orchestrator
+      - mongo
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  orchestrator:
+    build: .
+    environment:
+      PORT: 3001
+      NODE_ENV: production
+      LOG_LEVEL: info
+      REQUEST_TIMEOUT_MS: 45000
+      RATE_LIMIT_MAX: 120
+      RATE_LIMIT_WINDOW_MS: 60000
+      ENABLE_METRICS: "true"
+      RAG_URL: http://rag:3002
+      CONTEXT_BUILDER_URL: http://context-builder:3008
+      PLANNER_URL: http://planner:3003
+      GENERATOR_URL: http://generator:3004
+      VALIDATOR_URL: http://validator:3005
+      SIMULATOR_URL: http://simulator:3006
+      STORAGE_URL: http://storage:3007
+    depends_on:
+      - rag
+      - context-builder
+      - planner
+      - generator
+      - validator
+      - simulator
+      - storage
+
+  rag:
+    build: .
+    environment:
+      PORT: 3002
+      NODE_ENV: production
+      LOG_LEVEL: info
+      REQUEST_TIMEOUT_MS: 45000
+      RATE_LIMIT_MAX: 120
+      RATE_LIMIT_WINDOW_MS: 60000
+      ENABLE_METRICS: "true"
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DATABASE: wireup
+    depends_on:
+      - mongo
+
+  context-builder:
+    build: .
+    environment:
+      PORT: 3008
+      NODE_ENV: production
+      LOG_LEVEL: info
+      REQUEST_TIMEOUT_MS: 45000
+      RATE_LIMIT_MAX: 120
+      RATE_LIMIT_WINDOW_MS: 60000
+      ENABLE_METRICS: "true"
+
+  planner:
+    build: .
+    environment:
+      PORT: 3003
+      NODE_ENV: production
+      LOG_LEVEL: info
+      REQUEST_TIMEOUT_MS: 45000
+      RATE_LIMIT_MAX: 120
+      RATE_LIMIT_WINDOW_MS: 60000
+      ENABLE_METRICS: "true"
+
+  generator:
+    build: .
+    environment:
+      PORT: 3004
+      NODE_ENV: production
+      LOG_LEVEL: info
+      REQUEST_TIMEOUT_MS: 45000
+      RATE_LIMIT_MAX: 120
+      RATE_LIMIT_WINDOW_MS: 60000
+      ENABLE_METRICS: "true"
+
+  validator:
+    build: .
+    environment:
+      PORT: 3005
+      NODE_ENV: production
+      LOG_LEVEL: info
+      REQUEST_TIMEOUT_MS: 45000
+      RATE_LIMIT_MAX: 120
+      RATE_LIMIT_WINDOW_MS: 60000
+      ENABLE_METRICS: "true"
+
+  simulator:
+    build: .
+    environment:
+      PORT: 3006
+      NODE_ENV: production
+      LOG_LEVEL: info
+      REQUEST_TIMEOUT_MS: 45000
+      RATE_LIMIT_MAX: 120
+      RATE_LIMIT_WINDOW_MS: 60000
+      ENABLE_METRICS: "true"
+      STORAGE_URL: http://storage:3007
+      VELXIO_BASE_URL: http://velxio:8001
+      VELXIO_COMPILE_URL: http://velxio:8001/api/compile
+
+  storage:
+    build: .
+    environment:
+      PORT: 3007
+      NODE_ENV: production
+      LOG_LEVEL: info
+      REQUEST_TIMEOUT_MS: 45000
+      RATE_LIMIT_MAX: 120
+      RATE_LIMIT_WINDOW_MS: 60000
+      ENABLE_METRICS: "true"
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DATABASE: wireup
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  velxio:
+    image: ghcr.io/velxio/velxio:latest
+    ports:
+      - "8001:8001"
+
+volumes:
+  mongo-data:

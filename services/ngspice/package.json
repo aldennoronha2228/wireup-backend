@@ -1,0 +1,24 @@
+{
+  "name": "@wireup/ngspice",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "build:ngspice:unix": "sh scripts/build-ngspice.sh",
+    "build:ngspice:win": "powershell -ExecutionPolicy Bypass -File scripts/build-ngspice.ps1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@hono/node-server": "^1.12.0",
+    "hono": "^4.5.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.16.0",
+    "typescript": "^5.6.0"
+  }
+}

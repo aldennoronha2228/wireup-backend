@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@wireup/types": ["packages/types/src/index.ts"],
+      "@wireup/utils": ["packages/utils/src/index.ts"],
+      "@wireup/schemas": ["packages/schemas/src/index.ts"],
+      "@wireup/shared": ["packages/shared/src/index.ts"]
+    }
+  },
+  "include": ["packages/**/*", "services/**/*"],
+  "exclude": ["node_modules"]
+}

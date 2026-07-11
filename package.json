@@ -1,0 +1,20 @@
+{
+  "name": "wireup-backend",
+  "version": "0.1.0",
+  "description": "WireUp - AI-native hardware IDE backend",
+  "private": true,
+  "packageManager": "pnpm@9.1.0",
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "pnpm --filter \"./services/*\" dev",
+    "build": "pnpm --filter \"./packages/*\" build && pnpm --filter \"./services/*\" build",
+    "lint": "pnpm --filter \"./packages/*\" lint && pnpm --filter \"./services/*\" lint",
+    "typecheck": "pnpm --filter \"./packages/*\" typecheck && pnpm --filter \"./services/*\" typecheck"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT"
+}
