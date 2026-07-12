@@ -19,6 +19,7 @@ const logger = {
 console.log(`[startup] ${runtimeConfig.serviceName} loaded env from ${appConfig.runtime.envFile ?? "<default>"}`);
 console.log(`[startup] ${runtimeConfig.serviceName} mongodb uri ${maskMongoUri(appConfig.mongodbUri)}`);
 console.log(`[startup] ${runtimeConfig.serviceName} database ${config.mongodbDatabase}`);
+console.log(`[startup] ${runtimeConfig.serviceName} llm provider ${appConfig.llmProvider}`);
 console.log(
   `[startup] ${runtimeConfig.serviceName} collections ${config.mongodbCollectionDocuments}, ${config.mongodbCollectionChunks}, ${config.mongodbCollectionKnowledgeGraph}`,
 );

@@ -19,8 +19,31 @@
 - `MONGODB_VECTOR_INDEX`
 - `MONGODB_TEXT_INDEX`
 - `MONGODB_KG_TEXT_INDEX`
+- `LLM_PROVIDER`
+- `LLM_API_KEY` or `OPENAI_API_KEY` for remote LLM providers
+- `LLM_MODEL`
+- `LLM_BASE_URL`
 - `EMBEDDING_PROVIDER`
-- `EMBEDDING_API_KEY` when `EMBEDDING_PROVIDER=openai`
+- `EMBEDDING_API_KEY` for remote embedding providers except `ollama`
+- `EMBEDDING_MODEL`
+- `EMBEDDING_BASE_URL`
+
+## Supported Provider Values
+
+The backend accepts these provider names in a case-insensitive way and normalizes them to lowercase:
+
+- `openai`
+- `gemini`
+- `openrouter`
+- `ollama`
+- `local`
+
+`LOG_LEVEL` is also case-insensitive and normalizes to one of:
+
+- `debug`
+- `info`
+- `warn`
+- `error`
 
 ## Required Collections
 

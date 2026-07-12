@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+const SupportedProviderSchema = z.enum(["openai", "gemini", "openrouter", "ollama", "local"]);
+const normalizeLowercase = (value: unknown) => (typeof value === "string" ? value.toLowerCase() : value);
+
 const ConfigSchema = z.object({
   mongodbUri: z.string().min(1),
   mongodbDatabase: z.string().default("rag_db"),
@@ -9,7 +12,7 @@ const ConfigSchema = z.object({
   mongodbVectorIndex: z.string().default("vector_index"),
   mongodbTextIndex: z.string().default("text_index"),
   mongodbKgTextIndex: z.string().default("kg_text_index"),
-  embeddingProvider: z.enum(["openai", "local", "gemini"]).default("local"),
+  embeddingProvider: z.preprocess(normalizeLowercase, SupportedProviderSchema.default("local")),
   embeddingApiKey: z.string().optional(),
   embeddingModel: z.string().default("text-embedding-3-small"),
   embeddingBaseUrl: z.string().default("https://api.openai.com/v1"),
@@ -59,7 +62,11 @@ export const loadConfig = () => {
     throw new Error(`${message}: ${JSON.stringify(details)}`);
   }
 
-  if (parsed.data.embeddingProvider !== "local" && !parsed.data.embeddingApiKey) {
+  if (
+    parsed.data.embeddingProvider !== "local" &&
+    parsed.data.embeddingProvider !== "ollama" &&
+    !parsed.data.embeddingApiKey
+  ) {
     throw new Error("EMBEDDING_API_KEY is required for remote embedding providers");
   }
 

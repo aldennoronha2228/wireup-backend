@@ -1,7 +1,14 @@
 import { z } from "zod";
+import {
+  ProjectStatus,
+  HardwarePlatformType,
+  ValidationErrorType,
+  ValidationWarningType,
+  SimulationStatus,
+  StreamEventType,
+} from "@wireup/types";
 import type {
   Project,
-  ProjectStatus,
   Session,
   RagQuery,
   RagContextItem,
@@ -10,7 +17,6 @@ import type {
   ContextBuilderResponse,
   PlannerRequest,
   PlannerResponse,
-  HardwarePlatformType,
   HardwarePlatform,
   Pinout,
   Sensor,
@@ -33,13 +39,10 @@ import type {
   SimulationSetup,
   ValidatorRequest,
   ValidatorResponse,
-  ValidationErrorType,
   ValidationError,
-  ValidationWarningType,
   ValidationWarning,
   SimulatorRequest,
   SimulatorResponse,
-  SimulationStatus,
   PinValue,
   SensorValue,
   ExecutionLog,
@@ -48,7 +51,6 @@ import type {
   StorageProjectUpdateRequest,
   StorageSessionCreateRequest,
   ConversationMessage,
-  StreamEventType,
   StreamEvent,
   ApiResponse,
   ApiError,
@@ -60,15 +62,7 @@ import type {
 // Core Schemas
 // ======================
 
-export const ProjectStatusSchema = z.enum([
-  "created",
-  "planning",
-  "generating",
-  "validating",
-  "simulating",
-  "completed",
-  "error",
-]) satisfies z.ZodType<ProjectStatus>;
+export const ProjectStatusSchema = z.nativeEnum(ProjectStatus) satisfies z.ZodType<ProjectStatus>;
 
 export const ProjectSchema = z.object({
   id: z.string().uuid(),
@@ -134,13 +128,7 @@ export const ContextBuilderResponseSchema = z.object({
 // Planner Schemas
 // ======================
 
-export const HardwarePlatformTypeSchema = z.enum([
-  "arduino_uno",
-  "arduino_nano",
-  "esp32",
-  "raspberry_pi",
-  "stm32",
-]) satisfies z.ZodType<HardwarePlatformType>;
+export const HardwarePlatformTypeSchema = z.nativeEnum(HardwarePlatformType) satisfies z.ZodType<HardwarePlatformType>;
 
 export const PinoutSchema = z.object({
   pinNumber: z.string(),
@@ -304,15 +292,7 @@ export const GeneratorResponseSchema = z.object({
 // Validator Schemas
 // ======================
 
-export const ValidationErrorTypeSchema = z.enum([
-  "incompatible_pins",
-  "duplicate_gpio",
-  "voltage_mismatch",
-  "unsupported_component",
-  "firmware_consistency",
-  "missing_libraries",
-  "simulation_compatibility",
-]) satisfies z.ZodType<ValidationErrorType>;
+export const ValidationErrorTypeSchema = z.nativeEnum(ValidationErrorType) satisfies z.ZodType<ValidationErrorType>;
 
 export const ValidationErrorSchema = z.object({
   type: ValidationErrorTypeSchema,
@@ -320,11 +300,7 @@ export const ValidationErrorSchema = z.object({
   details: z.record(z.unknown()),
 }) satisfies z.ZodType<ValidationError>;
 
-export const ValidationWarningTypeSchema = z.enum([
-  "potential_noise",
-  "power_consumption_high",
-  "untested_component",
-]) satisfies z.ZodType<ValidationWarningType>;
+export const ValidationWarningTypeSchema = z.nativeEnum(ValidationWarningType) satisfies z.ZodType<ValidationWarningType>;
 
 export const ValidationWarningSchema = z.object({
   type: ValidationWarningTypeSchema,
@@ -347,12 +323,7 @@ export const ValidatorResponseSchema = z.object({
 // Simulator Schemas
 // ======================
 
-export const SimulationStatusSchema = z.enum([
-  "pending",
-  "running",
-  "completed",
-  "error",
-]) satisfies z.ZodType<SimulationStatus>;
+export const SimulationStatusSchema = z.nativeEnum(SimulationStatus) satisfies z.ZodType<SimulationStatus>;
 
 export const PinValueSchema = z.object({
   timestamp: z.number().int().positive(),
@@ -427,22 +398,7 @@ export const StorageSessionCreateRequestSchema = z.object({
 // Streaming Schemas
 // ======================
 
-export const StreamEventTypeSchema = z.enum([
-  "progress",
-  "plan_start",
-  "plan_progress",
-  "plan_complete",
-  "generation_start",
-  "generation_progress",
-  "generation_complete",
-  "validation_start",
-  "validation_progress",
-  "validation_complete",
-  "simulation_start",
-  "simulation_progress",
-  "simulation_complete",
-  "error",
-]) satisfies z.ZodType<StreamEventType>;
+export const StreamEventTypeSchema = z.nativeEnum(StreamEventType) satisfies z.ZodType<StreamEventType>;
 
 export const StreamEventSchema = z.object({
   type: StreamEventTypeSchema,

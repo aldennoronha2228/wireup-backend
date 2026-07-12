@@ -13,7 +13,7 @@ import {
   registerHealthRoutes,
   registerMetricsRoute,
 } from "@wireup/utils";
-import { buildPlan } from "./planner.js";
+import { buildPlanWithRetrieval } from "./planner.js";
 
 loadEnvironment();
 const serviceName = "planner";
@@ -45,10 +45,11 @@ app.post("/api/planner/plan", async (c) => {
     );
   }
 
-  const response: PlannerResponse = buildPlan({
+  const response: PlannerResponse = await buildPlanWithRetrieval({
     prompt: parsed.data.prompt,
     ragContext: parsed.data.ragContext,
     projectState: parsed.data.projectState,
+    useRetrieval: true,
   });
 
   return c.json({ success: true, data: response } satisfies ApiResponse<PlannerResponse>);

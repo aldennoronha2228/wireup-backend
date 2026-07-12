@@ -39,6 +39,15 @@ const getDefaultPortForService = (serviceName: string) => {
   return defaults[serviceName] ?? 3000;
 };
 
+const parseLogLevel = (value: string | undefined): RuntimeConfig["logLevel"] => {
+  const normalized = value?.toLowerCase();
+  if (normalized === "debug" || normalized === "info" || normalized === "warn" || normalized === "error") {
+    return normalized;
+  }
+
+  return "info";
+};
+
 export const getRuntimeConfig = (serviceName: string): RuntimeConfig => {
   const portEnvName = getServicePortEnvironmentVariable(serviceName);
   const configuredPort = Number(process.env[portEnvName] ?? getDefaultPortForService(serviceName));
@@ -49,7 +58,7 @@ export const getRuntimeConfig = (serviceName: string): RuntimeConfig => {
     requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS) || 45000,
     rateLimitMax: Number(process.env.RATE_LIMIT_MAX) || 120,
     rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
-    logLevel: (process.env.LOG_LEVEL as RuntimeConfig["logLevel"]) || "info",
+    logLevel: parseLogLevel(process.env.LOG_LEVEL),
     metricsEnabled: process.env.ENABLE_METRICS !== "false",
   };
 };

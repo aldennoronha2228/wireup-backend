@@ -300,6 +300,18 @@ To reuse that implementation safely, the backend now uses a thin adapter in [ser
   - What changed: Added middleware, health routes, metrics, and graceful shutdown.
   - How it interacts with other services: Receives generator requests from the orchestrator.
 
+- services/generator/src/generator.ts
+  - Why it was modified: To synchronize Generator implementation with the current PlannerResponse schema contract.
+  - What changed: 
+    - Eliminated all stale field references (`plan.wiring` → `plan.wiringPlan`, `plan.components` → `plan.requiredComponents`).
+    - Added defensive validation helper function `getPlannerContext()` that validates all required PlannerResponse fields before use with explicit error messages.
+    - Added `assertValue()` helper to enforce non-null/non-undefined contract.
+    - Rewrote all builder functions (`buildFirmware`, `buildProjectMetadata`, `buildAssemblyInstructions`, `buildWiringMetadata`, `buildSimulationJson`) to destructure validated context from `getPlannerContext()` at the start.
+    - Updated all callback parameters to have explicit types instead of implicit-any.
+    - Imported `SimulationJson` type from @wireup/types for type safety in `buildSimulationJson()`.
+  - Testing: Unit tests pass (2/2 passing: "builds deterministic generator output" and "does not include markdown").
+  - How it interacts with other services: Validates and processes PlannerResponse objects from Planner service and outputs GeneratorResponse with synchronized schema.
+
 - services/validator/src/index.ts
   - Why it was modified: To add runtime hardening and observability.
   - What changed: Added middleware, health routes, metrics, and graceful shutdown.

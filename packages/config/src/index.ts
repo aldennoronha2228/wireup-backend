@@ -17,6 +17,11 @@ const envFiles = [
 
 const envFile = envFiles.find((candidate) => existsSync(candidate));
 
+const normalizeLowercase = (value: unknown) => (typeof value === "string" ? value.toLowerCase() : value);
+
+const SupportedProviderSchema = z.enum(["openai", "gemini", "openrouter", "ollama", "local"]);
+const LogLevelSchema = z.enum(["debug", "info", "warn", "error"]);
+
 export const loadEnvironment = (overridePath?: string) => {
   const candidatePath = overridePath ?? envFile;
   if (candidatePath) {
@@ -28,7 +33,7 @@ export const loadEnvironment = (overridePath?: string) => {
 
   return {
     envFile: candidatePath ?? null,
-    loadedKeys: Object.keys(process.env).filter((key) => key.startsWith("MONGODB") || key.startsWith("EMBED") || key.startsWith("OPENAI") || key.includes("PORT") || key.includes("TIMEOUT") || key.includes("RATE_LIMIT") || key.includes("LOG_LEVEL") || key.includes("SERVICE") || key.includes("URL") || key.includes("PROVIDER") || key.includes("MODEL") || key.includes("BASE_URL") || key.includes("DIMENSION")),
+    loadedKeys: Object.keys(process.env).filter((key) => key.startsWith("MONGODB") || key.startsWith("EMBED") || key.startsWith("LLM") || key.startsWith("OPENAI") || key.includes("PORT") || key.includes("TIMEOUT") || key.includes("RATE_LIMIT") || key.includes("LOG_LEVEL") || key.includes("SERVICE") || key.includes("URL") || key.includes("PROVIDER") || key.includes("MODEL") || key.includes("BASE_URL") || key.includes("DIMENSION")),
   };
 };
 
@@ -39,14 +44,18 @@ const RuntimeConfigSchema = z.object({
   rateLimitMax: z.number().int().positive().default(120),
   rateLimitWindowMs: z.number().int().positive().default(60000),
   logLevel: z.preprocess(
-    (value) => (typeof value === "string" ? value.toLowerCase() : value),
-    z.enum(["debug", "info", "warn", "error"]).default("info"),
+    normalizeLowercase,
+    LogLevelSchema.default("info"),
   ),
   enableMetrics: z.boolean().default(true),
   mongodbUri: z.string().min(1),
   mongodbDatabase: z.string().min(1),
+  llmProvider: z.preprocess(normalizeLowercase, SupportedProviderSchema.default("local")),
+  llmApiKey: z.string().optional(),
+  llmModel: z.string().default("anthropic/claude-haiku-4.5"),
+  llmBaseUrl: z.string().default("https://openrouter.ai/api/v1"),
   openAiApiKey: z.string().optional(),
-  embeddingProvider: z.enum(["openai", "local", "gemini"]).default("local"),
+  embeddingProvider: z.preprocess(normalizeLowercase, SupportedProviderSchema.default("local")),
   embeddingApiKey: z.string().optional(),
   embeddingModel: z.string().default("text-embedding-3-small"),
   embeddingBaseUrl: z.string().default("https://api.openai.com/v1"),
@@ -81,6 +90,10 @@ export const getAppConfig = () => {
     enableMetrics: parseBoolean(process.env.ENABLE_METRICS, true),
     mongodbUri: process.env.MONGODB_URI,
     mongodbDatabase: process.env.MONGODB_DATABASE || "wireup",
+    llmProvider: process.env.LLM_PROVIDER,
+    llmApiKey: process.env.LLM_API_KEY || process.env.OPENAI_API_KEY,
+    llmModel: process.env.LLM_MODEL || "anthropic/claude-haiku-4.5",
+    llmBaseUrl: process.env.LLM_BASE_URL || "https://openrouter.ai/api/v1",
     openAiApiKey: process.env.OPENAI_API_KEY,
     embeddingProvider: process.env.EMBEDDING_PROVIDER || "local",
     embeddingApiKey: process.env.EMBEDDING_API_KEY,
@@ -95,6 +108,10 @@ export const getAppConfig = () => {
   if (!parsed.success) {
     const errors = parsed.error.flatten().fieldErrors;
     throw new Error(`Invalid application configuration: ${JSON.stringify(errors)}`);
+  }
+
+  if (parsed.data.llmProvider !== "local" && parsed.data.llmProvider !== "ollama" && !parsed.data.llmApiKey) {
+    throw new Error("LLM_API_KEY is required for remote LLM providers");
   }
 
   return {

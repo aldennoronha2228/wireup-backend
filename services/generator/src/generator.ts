@@ -8,32 +8,79 @@ import {
   type ProjectMetadata,
   type SimulationComponent,
   type SimulationConnection,
+  type SimulationJson,
   type WiringMetadata,
 } from "@wireup/types";
 
 const firmwareLanguage = (platform: HardwarePlatformType) =>
   platform === HardwarePlatformType.RASPBERRY_PI ? "python" : "arduino";
 
+const assertValue = <T>(value: T | null | undefined, message: string): T => {
+  if (value === null || value === undefined) {
+    throw new Error(message);
+  }
+
+  return value;
+};
+
+const getPlannerContext = (plan: PlannerResponse) => {
+  const hardwarePlatform = assertValue(
+    plan.hardwarePlatform,
+    "PlannerResponse is missing hardwarePlatform",
+  );
+  const simulationRequirements = assertValue(
+    plan.simulationRequirements,
+    "PlannerResponse is missing simulationRequirements",
+  );
+  const requiredComponents = assertValue(
+    plan.requiredComponents,
+    "PlannerResponse is missing requiredComponents",
+  );
+  const projectRequirements = assertValue(
+    plan.projectRequirements,
+    "PlannerResponse is missing projectRequirements",
+  );
+  const libraries = assertValue(plan.libraries, "PlannerResponse is missing libraries");
+  const wiringPlan = assertValue(plan.wiringPlan, "PlannerResponse is missing wiringPlan");
+
+  if (!Array.isArray(wiringPlan.connections)) {
+    throw new Error("PlannerResponse wiringPlan has no connections");
+  }
+
+  return {
+    hardwarePlatform,
+    simulationRequirements,
+    requiredComponents,
+    projectRequirements,
+    libraries,
+    wiringPlan,
+    connections: wiringPlan.connections,
+  };
+};
+
 const buildFirmware = (plan: PlannerResponse): Firmware => {
-  const language = firmwareLanguage(plan.hardwarePlatform.type);
-  const libraryIncludes = plan.libraries
+  const { hardwarePlatform, libraries, connections } = getPlannerContext(plan);
+  const language = firmwareLanguage(hardwarePlatform.type);
+  const libraryIncludes = libraries
     .filter(Boolean)
     .map((library) => (language === "python" ? `import ${library}` : `#include <${library}.h>`));
 
-  const pinSetupLines = plan.wiring.connections.map((connection) =>
-    language === "python"
-      ? `# configure ${connection.from.platformPin}`
-      : `pinMode(${connection.from.platformPin}, ${
-          connection.type === "analog" ? "INPUT" : "INPUT_PULLUP"
-        });`,
+  const pinSetupLines = connections.map(
+    (connection: PlannerResponse["wiringPlan"]["connections"][number]) =>
+      language === "python"
+        ? `# configure ${connection.from.platformPin}`
+        : `pinMode(${connection.from.platformPin}, ${
+            connection.type === "analog" ? "INPUT" : "INPUT_PULLUP"
+          });`,
   );
 
-  const readLines = plan.wiring.connections.map((connection, index) =>
-    language === "python"
-      ? `value_${index} = read_${connection.from.platformPin}()`
-      : `auto value_${index} = ${
-          connection.type === "analog" ? "analogRead" : "digitalRead"
-        }(${connection.from.platformPin});`,
+  const readLines = connections.map(
+    (connection: PlannerResponse["wiringPlan"]["connections"][number], index: number) =>
+      language === "python"
+        ? `value_${index} = read_${connection.from.platformPin}()`
+        : `auto value_${index} = ${
+            connection.type === "analog" ? "analogRead" : "digitalRead"
+          }(${connection.from.platformPin});`,
   );
 
   if (language === "python") {
@@ -44,13 +91,13 @@ const buildFirmware = (plan: PlannerResponse): Firmware => {
         ...libraryIncludes,
         "",
         "def setup():",
-        ...pinSetupLines.map((line) => `    ${line}`),
+        ...pinSetupLines.map((line: string) => `    ${line}`),
         "",
         "def loop():",
-        ...readLines.map((line) => `    ${line}`),
+        ...readLines.map((line: string) => `    ${line}`),
         "    return",
       ].join("\n"),
-      libraries: plan.libraries,
+      libraries,
     };
   }
 
@@ -61,29 +108,31 @@ const buildFirmware = (plan: PlannerResponse): Firmware => {
       ...libraryIncludes,
       "",
       "void setup() {",
-      ...pinSetupLines.map((line) => `  ${line}`),
+      ...pinSetupLines.map((line: string) => `  ${line}`),
       "}",
       "",
       "void loop() {",
-      ...readLines.map((line) => `  ${line}`),
+      ...readLines.map((line: string) => `  ${line}`),
       "  delay(500);",
       "}",
     ].join("\n"),
-    libraries: plan.libraries,
+    libraries,
   };
 };
 
 const buildProjectMetadata = (plan: PlannerResponse): ProjectMetadata => {
-  const titleSeed = plan.projectRequirements[0] || plan.hardwarePlatform.name;
+  const { hardwarePlatform, projectRequirements, libraries } = getPlannerContext(plan);
+  const titleSeed = projectRequirements[0] || hardwarePlatform.name;
   return {
-    title: `${plan.hardwarePlatform.name} ${titleSeed}`.trim(),
-    description: plan.projectRequirements.join(" "),
-    tags: [plan.hardwarePlatform.type, ...plan.libraries].filter(Boolean),
+    title: `${hardwarePlatform.name} ${titleSeed}`.trim(),
+    description: projectRequirements.join(" "),
+    tags: [hardwarePlatform.type, ...libraries].filter(Boolean),
     difficulty: "beginner",
   };
 };
 
 const buildAssemblyInstructions = (plan: PlannerResponse): AssemblyInstruction[] => {
+  const { connections } = getPlannerContext(plan);
   const instructions: AssemblyInstruction[] = [];
   const powerNote = "Connect all components to common power and ground rails.";
 
@@ -93,7 +142,7 @@ const buildAssemblyInstructions = (plan: PlannerResponse): AssemblyInstruction[]
     description: powerNote,
   });
 
-  plan.wiring.connections.forEach((connection, index) => {
+  connections.forEach((connection, index) => {
     instructions.push({
       step: index + 2,
       title: `Wire ${connection.from.componentId} to ${connection.from.platformPin}`,
@@ -105,26 +154,29 @@ const buildAssemblyInstructions = (plan: PlannerResponse): AssemblyInstruction[]
 };
 
 const buildWiringMetadata = (plan: PlannerResponse): WiringMetadata => {
+  const { connections } = getPlannerContext(plan);
   const pinUsage: Record<string, string[]> = {};
 
-  plan.wiring.connections.forEach((connection) => {
+  connections.forEach((connection) => {
     const pin = connection.from.platformPin;
     if (!pinUsage[pin]) pinUsage[pin] = [];
     pinUsage[pin].push(connection.from.componentId);
   });
 
   return {
-    totalConnections: plan.wiring.connections.length,
-    analogConnections: plan.wiring.connections.filter((c) => c.type === "analog").length,
-    digitalConnections: plan.wiring.connections.filter((c) => c.type === "digital").length,
-    powerConnections: plan.wiring.connections.filter((c) => c.type === "power").length,
-    groundConnections: plan.wiring.connections.filter((c) => c.type === "ground").length,
+    totalConnections: connections.length,
+    analogConnections: connections.filter((c) => c.type === "analog").length,
+    digitalConnections: connections.filter((c) => c.type === "digital").length,
+    powerConnections: connections.filter((c) => c.type === "power").length,
+    groundConnections: connections.filter((c) => c.type === "ground").length,
     pinUsage,
   };
 };
 
-const buildSimulation = (plan: PlannerResponse) => {
-  const components: SimulationComponent[] = plan.requiredComponents.map(
+const buildSimulationJson = (plan: PlannerResponse): SimulationJson => {
+  const { requiredComponents, connections, simulationRequirements } = getPlannerContext(plan);
+
+  const components: SimulationComponent[] = requiredComponents.map(
     (component, index) => ({
       id: component.id,
       type: component.type,
@@ -133,44 +185,43 @@ const buildSimulation = (plan: PlannerResponse) => {
     }),
   );
 
-  const connections: SimulationConnection[] = plan.wiring.connections.map(
-    (connection) => ({
-      from: {
-        componentId: connection.from.componentId,
-        pin: connection.from.pinName,
-      },
-      to: {
-        componentId: connection.to.componentId,
-        pin: connection.to.pinName,
-      },
-    }),
-  );
+  const simulationConnections: SimulationConnection[] = connections.map((connection) => ({
+    from: {
+      componentId: connection.from.componentId,
+      pin: connection.from.pinName,
+    },
+    to: {
+      componentId: connection.to.componentId,
+      pin: connection.to.pinName,
+    },
+  }));
 
   return {
     version: "1.0",
     components,
-    connections,
+    connections: simulationConnections,
     setup: {
       timeStep: 10,
-      duration: plan.simulationRequirements.duration,
+      duration: simulationRequirements.duration,
     },
   };
 };
 
 export const buildGeneratorOutput = (plan: PlannerResponse): GeneratorResponse => {
+  const { requiredComponents, wiringPlan } = getPlannerContext(plan);
   const firmware = buildFirmware(plan);
-  const componentList: Component[] = plan.requiredComponents.map((component) => ({
+  const componentList: Component[] = requiredComponents.map((component) => ({
     ...component,
     quantity: component.quantity || 1,
   }));
 
   return {
     firmware,
-    wiring: plan.wiringPlan,
+    wiring: wiringPlan,
     componentList,
     assemblyInstructions: buildAssemblyInstructions(plan),
     projectMetadata: buildProjectMetadata(plan),
     wiringMetadata: buildWiringMetadata(plan),
-    simulationJson: buildSimulation(plan),
+    simulationJson: buildSimulationJson(plan),
   };
 };

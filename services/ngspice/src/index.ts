@@ -70,13 +70,26 @@ registerMetricsRoute(app, metrics, serviceName);
 const startServer = () => {
   const port = runtimeConfig.port;
   logger.info("service_starting", { port, envFile: appConfig.runtime.envFile });
+  (async () => {
+    try {
+      const { testNgspiceExecutable } = await import("./ngspice.js");
+      const result = await testNgspiceExecutable();
+      if (result && result.path) {
+        logger.info("ngspice_check", { path: result.path, exitCode: result.exitCode, stdout: result.stdout });
+      } else {
+        logger.warn("ngspice_missing", { error: result.stderr });
+      }
+    } catch (err) {
+      logger.warn("ngspice_check_failed", { error: err instanceof Error ? err.message : String(err) });
+    }
 
-  const server = serve({
-    fetch: app.fetch,
-    port,
-  });
+    const server = serve({
+      fetch: app.fetch,
+      port,
+    });
 
-  registerGracefulShutdown(server as any, logger);
+    registerGracefulShutdown(server as any, logger);
+  })();
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
+import { logger as honoLogger } from "hono/logger";
 import { getAppConfig, loadEnvironment } from "@wireup/config";
 import {
   StorageProjectCreateRequestSchema,
@@ -39,8 +39,8 @@ const app = new Hono();
 app.use("*", cors());
 app.use("*", ...createCommonMiddleware(runtimeConfig, logger, metrics));
 
-let projectsCollection: Collection;
-let sessionsCollection: Collection;
+let projectsCollection: Collection<Document & { _id: string }>;
+let sessionsCollection: Collection<Document & { _id: string }>;
 
 const initMongo = async () => {
   const db = await getDatabase();
@@ -59,7 +59,7 @@ const initMongo = async () => {
   ]);
 };
 
-const toStorageProject = (doc: WithId<Document>): StorageProject => ({
+const toStorageProject = (doc: WithId<Document & { _id: string }>): StorageProject => ({
   id: doc.projectId ?? String(doc._id),
   name: doc.name,
   description: doc.description,

@@ -9,19 +9,17 @@
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
     "resolveJsonModule": true,
-    "allowImportingTsExtensions": true,
     "noEmit": true,
     "types": ["node"],
     "ignoreDeprecations": "5.0",
     "baseUrl": ".",
     "paths": {
-      "@wireup/types": ["packages/types/src/index.ts"],
-      "@wireup/utils": ["packages/utils/src/index.ts"],
-      "@wireup/schemas": ["packages/schemas/src/index.ts"],
-      "@wireup/shared": ["packages/shared/src/index.ts"],
-      "@wireup/ngspice": ["services/ngspice/src/index.ts"]
+      "@wireup/types": ["packages/types/dist/index.d.ts"],
+      "@wireup/utils": ["packages/utils/dist/index.d.ts"],
+      "@wireup/schemas": ["packages/schemas/dist/index.d.ts"],
+      "@wireup/shared": ["packages/shared/dist/index.d.ts"],
+      "@wireup/ngspice": ["services/ngspice/dist/index.js"]
     }
   },
-  "include": ["packages/**/*", "services/**/*"],
   "exclude": ["node_modules"]
 }

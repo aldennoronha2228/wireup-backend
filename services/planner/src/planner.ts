@@ -8,11 +8,22 @@ import {
   type Sensor,
   type WiringPlan,
 } from "@wireup/types";
+import {
+  createRetrievalService,
+  type RetrievalService,
+} from "./retrieval/index";
+import {
+  contextToComponents,
+  detectPlatformFromContext,
+  buildFirmwareGoalsFromContext,
+  buildConfidenceExplanation,
+} from "./retrieval/context-builder";
 
-interface PlannerInputs {
+export interface PlannerInputs {
   prompt: string;
   ragContext: RagContextItem[];
   projectState?: Record<string, unknown>;
+  useRetrieval?: boolean;
 }
 
 const platformNames: Record<HardwarePlatformType, string> = {
@@ -22,6 +33,245 @@ const platformNames: Record<HardwarePlatformType, string> = {
   [HardwarePlatformType.RASPBERRY_PI]: "Raspberry Pi",
   [HardwarePlatformType.STM32]: "STM32",
 };
+
+
+const createPlatformAssignment = (pin: string): PinAssignment => ({
+  componentId: "platform",
+  pinName: pin,
+  platformPin: pin,
+});
+
+const mergeExistingComponents = (
+  base: Component[],
+  projectState?: Record<string, unknown>,
+) => {
+  const existing = Array.isArray(projectState?.requiredComponents)
+    ? (projectState?.requiredComponents as Component[])
+    : [];
+
+  const merged = new Map<string, Component>();
+  [...existing, ...base].forEach((component) => {
+    merged.set(component.id, component);
+  });
+
+  return Array.from(merged.values());
+};
+
+/**
+ * Build a plan using retrieval-first approach.
+ * First retrieves technical information, then generates the plan.
+ */
+export async function buildPlanWithRetrieval(
+  inputs: PlannerInputs,
+  retrieverService?: RetrievalService,
+): Promise<PlannerResponse> {
+  const service =
+    retrieverService ||
+    createRetrievalService({
+      enabled: inputs.useRetrieval !== false,
+    });
+
+  console.log(
+    `[Planner] Starting retrieval-first planning for: "${inputs.prompt.slice(0, 50)}..."`,
+  );
+
+  // Execute retrieval pipeline
+  const retrievalResult = await service.retrieve(inputs.prompt);
+
+  if (!retrievalResult.success && retrievalResult.error) {
+    console.warn(
+      `[Planner] Retrieval failed, falling back to knowledge base: ${retrievalResult.error}`,
+    );
+  }
+
+  // Convert retrieval context to components and sensors
+  const { sensors: retrievedSensors, components: retrievedComponents, libraries: retrievedLibraries } =
+    retrievalResult.success
+      ? contextToComponents(retrievalResult.context)
+      : { sensors: [], components: [], libraries: [] };
+
+  // Detect platform from retrieved context
+  const platformType = retrievalResult.success
+    ? detectPlatformFromContext(retrievalResult.context)
+    : HardwarePlatformType.ESP32;
+
+  const hardwarePlatform: HardwarePlatform = {
+    type: platformType,
+    name: platformNames[platformType],
+    pinout: basePinouts[platformType],
+  };
+
+  const requirements = inputs.prompt
+    .split(".")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  // Merge with existing components
+  const allComponents = mergeExistingComponents(
+    [...retrievedComponents],
+    inputs.projectState,
+  );
+
+  // Use retrieved sensors or generate default if needed
+  const sensors = retrievedSensors.length > 0 ? retrievedSensors : [];
+
+  if (sensors.length === 0) {
+    console.warn(
+      "[Planner] No sensors found via retrieval; prompt may need clarification",
+    );
+  }
+
+  // Assign pins
+  const neededPins = sensors.reduce(
+    (sum, sensor) => sum + sensor.pins.length,
+    0,
+  );
+  const availablePins = hardwarePlatform.pinout;
+  const assignedPins = availablePins
+    .slice(0, Math.max(neededPins, 4))
+    .map((pin) => pin.pinNumber);
+
+  let pinIndex = 0;
+  sensors.forEach((sensor) => {
+    sensor.pins = sensor.pins.map((pin) => ({
+      ...pin,
+      platformPin: assignedPins[pinIndex++] || availablePins[0].pinNumber,
+    }));
+  });
+
+  // Build wiring plan from sensors
+  const wiringPlan: WiringPlan = {
+    connections: sensors.flatMap((sensor) =>
+      sensor.pins.map((pin) => ({
+        from: pin,
+        to: createPlatformAssignment(pin.platformPin),
+        type: pin.pinName.toUpperCase().includes("A") ? "analog" : "digital",
+      })),
+    ),
+    notes: [
+      "All components share common power and ground rails",
+      retrievalResult.context.warnings.length > 0
+        ? `Design considerations: ${retrievalResult.context.warnings.join("; ")}`
+        : "Use stable power supply with adequate filtering",
+      ...retrievalResult.context.pinMappings
+        .filter((pm) => pm.notes)
+        .map((pm) => pm.notes || ""),
+    ].filter(Boolean),
+  };
+
+  // Build firmware goals from context
+  const firmwareGoals = buildFirmwareGoalsFromContext(retrievalResult.context);
+
+  // Combine libraries
+  const allLibraries = new Set<string>([
+    ...retrievedLibraries,
+    ...retrievalResult.context.libraries.map((lib) => lib.name),
+  ]);
+
+  // Build confidence explanation as a project requirement note
+  const confidenceNote = buildConfidenceExplanation(
+    retrievalResult.context,
+    retrievalResult.confidence,
+  );
+
+  return {
+    projectRequirements: [
+      ...requirements.filter(Boolean),
+      ...(retrievalResult.success
+        ? [
+          `[Retrieval Sources: ${retrievalResult.context.sources.join(", ")}]`,
+          confidenceNote,
+        ]
+        : []),
+    ],
+    hardwarePlatform,
+    sensors,
+    firmwareGoals,
+    requiredComponents: allComponents,
+    wiringPlan,
+    wiringStrategy:
+      sensors.length > 0
+        ? `Each sensor is wired to a unique GPIO pin. ${retrievalResult.context.communicationProtocols.includes("I2C") ? "I2C protocol is used for multi-device communication." : "Digital pins are configured with appropriate pull-ups as needed."}`.trim()
+        : "Unable to determine wiring strategy; insufficient information found",
+    libraries: Array.from(allLibraries),
+    simulationRequirements: {
+      duration: 10000,
+      inputSignals:
+        sensors.map((s) => ({
+          pin: s.pins[0]?.platformPin ?? "",
+          type: s.pins[0]?.pinName.toUpperCase().includes("A") ? "analog" as const : "digital" as const,
+          values: [],
+          intervalMs: 1000,
+        })) || [],
+      expectedOutputs: allComponents
+        .filter((c) => c.type === "actuator")
+        .map((c) => {
+          const rawPin = (c.specifications as Record<string, unknown>)?.pin;
+          const pin = typeof rawPin === "string" ? rawPin : "";
+          return {
+            pin,
+            type: "digital" as const,
+            expectedValues: undefined,
+            min: undefined,
+            max: undefined,
+          };
+        }) || [],
+    },
+  };
+}
+
+/**
+ * Legacy synchronous planner for backward compatibility.
+ * Use buildPlanWithRetrieval for new code.
+ */
+export const buildPlan = (inputs: PlannerInputs): PlannerResponse => {
+  // Note: This is a synchronous stub. In practice, use buildPlanWithRetrieval
+  console.warn(
+    "[Planner] buildPlan called synchronously; retrieval is disabled",
+  );
+
+  const platformType = HardwarePlatformType.ESP32;
+  const hardwarePlatform: HardwarePlatform = {
+    type: platformType,
+    name: platformNames[platformType],
+    pinout: basePinouts[platformType],
+  };
+
+  const requirements = inputs.prompt
+    .split(".")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  return {
+    projectRequirements: [
+      ...requirements,
+      "[WARNING: Retrieval disabled; using knowledge base only]",
+    ],
+    hardwarePlatform,
+    sensors: [],
+    firmwareGoals: [
+      "Initialize hardware interfaces",
+      "Read sensor data at regular intervals",
+      "Validate sensor readings",
+    ],
+    requiredComponents: [],
+    wiringPlan: {
+      connections: [],
+      notes: [
+        "Retrieval disabled; manually add components and wiring information",
+      ],
+    },
+    wiringStrategy:
+      "Unable to determine; retrieval is disabled",
+    libraries: [],
+    simulationRequirements: {
+      duration: 10000,
+      inputSignals: [],
+      expectedOutputs: [],
+    },
+  };
+};
+
 
 const basePinouts: Record<HardwarePlatformType, HardwarePlatform["pinout"]> = {
   [HardwarePlatformType.ARDUINO_UNO]: [
@@ -56,346 +306,3 @@ const basePinouts: Record<HardwarePlatformType, HardwarePlatform["pinout"]> = {
   ],
 };
 
-const keywordMap = [
-  {
-    keywords: ["temperature", "humidity"],
-    sensor: {
-      id: "sensor-dht22",
-      name: "DHT22",
-      type: "temperature-humidity",
-      description: "Digital temperature and humidity sensor",
-      pins: [
-        { componentId: "sensor-dht22", pinName: "DATA", platformPin: "" },
-      ],
-    },
-    component: {
-      id: "sensor-dht22",
-      name: "DHT22",
-      type: "sensor" as const,
-      description: "Digital temperature and humidity sensor",
-      specifications: { interface: "single-wire", voltage: "3.3-5V" },
-      quantity: 1,
-    },
-    libraries: ["DHT"],
-  },
-  {
-    keywords: ["motion", "pir"],
-    sensor: {
-      id: "sensor-pir",
-      name: "PIR Motion Sensor",
-      type: "motion",
-      description: "Passive infrared motion sensor",
-      pins: [{ componentId: "sensor-pir", pinName: "OUT", platformPin: "" }],
-    },
-    component: {
-      id: "sensor-pir",
-      name: "PIR Motion Sensor",
-      type: "sensor" as const,
-      description: "Passive infrared motion sensor",
-      specifications: { interface: "digital", voltage: "3.3-5V" },
-      quantity: 1,
-    },
-    libraries: [],
-  },
-  {
-    keywords: ["light", "lux"],
-    sensor: {
-      id: "sensor-bh1750",
-      name: "BH1750",
-      type: "light",
-      description: "I2C ambient light sensor",
-      pins: [{ componentId: "sensor-bh1750", pinName: "SDA", platformPin: "" }],
-    },
-    component: {
-      id: "sensor-bh1750",
-      name: "BH1750",
-      type: "sensor" as const,
-      description: "I2C ambient light sensor",
-      specifications: { interface: "i2c", voltage: "3.3V" },
-      quantity: 1,
-    },
-    libraries: ["BH1750"],
-  },
-  {
-    keywords: ["distance", "ultrasonic"],
-    sensor: {
-      id: "sensor-hcsr04",
-      name: "HC-SR04",
-      type: "distance",
-      description: "Ultrasonic distance sensor",
-      pins: [
-        { componentId: "sensor-hcsr04", pinName: "TRIG", platformPin: "" },
-        { componentId: "sensor-hcsr04", pinName: "ECHO", platformPin: "" },
-      ],
-    },
-    component: {
-      id: "sensor-hcsr04",
-      name: "HC-SR04",
-      type: "sensor" as const,
-      description: "Ultrasonic distance sensor",
-      specifications: { interface: "digital", voltage: "5V" },
-      quantity: 1,
-    },
-    libraries: [],
-  },
-  {
-    keywords: ["pressure", "barometer"],
-    sensor: {
-      id: "sensor-bmp280",
-      name: "BMP280",
-      type: "pressure",
-      description: "I2C pressure sensor",
-      pins: [{ componentId: "sensor-bmp280", pinName: "SCL", platformPin: "" }],
-    },
-    component: {
-      id: "sensor-bmp280",
-      name: "BMP280",
-      type: "sensor" as const,
-      description: "I2C pressure sensor",
-      specifications: { interface: "i2c", voltage: "3.3V" },
-      quantity: 1,
-    },
-    libraries: ["Adafruit_BMP280"],
-  },
-  {
-    keywords: ["gas", "air quality"],
-    sensor: {
-      id: "sensor-mq2",
-      name: "MQ-2",
-      type: "gas",
-      description: "Gas and smoke sensor",
-      pins: [{ componentId: "sensor-mq2", pinName: "A0", platformPin: "" }],
-    },
-    component: {
-      id: "sensor-mq2",
-      name: "MQ-2",
-      type: "sensor" as const,
-      description: "Gas and smoke sensor",
-      specifications: { interface: "analog", voltage: "5V" },
-      quantity: 1,
-    },
-    libraries: [],
-  },
-  {
-    keywords: ["accelerometer", "imu"],
-    sensor: {
-      id: "sensor-mpu6050",
-      name: "MPU6050",
-      type: "imu",
-      description: "I2C accelerometer and gyro",
-      pins: [{ componentId: "sensor-mpu6050", pinName: "SDA", platformPin: "" }],
-    },
-    component: {
-      id: "sensor-mpu6050",
-      name: "MPU6050",
-      type: "sensor" as const,
-      description: "I2C accelerometer and gyro",
-      specifications: { interface: "i2c", voltage: "3.3V" },
-      quantity: 1,
-    },
-    libraries: ["MPU6050"],
-  },
-  {
-    keywords: ["soil", "moisture"],
-    sensor: {
-      id: "sensor-soil",
-      name: "Soil Moisture Sensor",
-      type: "soil",
-      description: "Analog soil moisture sensor",
-      pins: [{ componentId: "sensor-soil", pinName: "A0", platformPin: "" }],
-    },
-    component: {
-      id: "sensor-soil",
-      name: "Soil Moisture Sensor",
-      type: "sensor" as const,
-      description: "Analog soil moisture sensor",
-      specifications: { interface: "analog", voltage: "3.3-5V" },
-      quantity: 1,
-    },
-    libraries: [],
-  },
-  {
-    keywords: ["relay"],
-    sensor: null,
-    component: {
-      id: "actuator-relay",
-      name: "Relay Module",
-      type: "actuator" as const,
-      description: "Single channel relay",
-      specifications: { interface: "digital", voltage: "5V" },
-      quantity: 1,
-    },
-    libraries: [],
-  },
-  {
-    keywords: ["servo"],
-    sensor: null,
-    component: {
-      id: "actuator-servo",
-      name: "Servo Motor",
-      type: "actuator" as const,
-      description: "Standard servo motor",
-      specifications: { interface: "pwm", voltage: "5V" },
-      quantity: 1,
-    },
-    libraries: ["Servo"],
-  },
-  {
-    keywords: ["led"],
-    sensor: null,
-    component: {
-      id: "actuator-led",
-      name: "LED",
-      type: "actuator" as const,
-      description: "Status LED",
-      specifications: { interface: "digital", voltage: "3.3-5V" },
-      quantity: 1,
-    },
-    libraries: [],
-  },
-];
-
-const detectPlatform = (text: string) => {
-  const lower = text.toLowerCase();
-  if (lower.includes("esp32")) return HardwarePlatformType.ESP32;
-  if (lower.includes("raspberry")) return HardwarePlatformType.RASPBERRY_PI;
-  if (lower.includes("stm32")) return HardwarePlatformType.STM32;
-  if (lower.includes("nano")) return HardwarePlatformType.ARDUINO_NANO;
-  return HardwarePlatformType.ARDUINO_UNO;
-};
-
-const extractRequirements = (prompt: string) =>
-  prompt
-    .split(".")
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-
-const assignPins = (pinout: HardwarePlatform["pinout"], count: number) =>
-  pinout.slice(0, count).map((pin) => pin.pinNumber);
-
-const createPlatformAssignment = (pin: string): PinAssignment => ({
-  componentId: "platform",
-  pinName: pin,
-  platformPin: pin,
-});
-
-const mergeExistingComponents = (
-  base: Component[],
-  projectState?: Record<string, unknown>,
-) => {
-  const existing = Array.isArray(projectState?.requiredComponents)
-    ? (projectState?.requiredComponents as Component[])
-    : [];
-
-  const merged = new Map<string, Component>();
-  [...existing, ...base].forEach((component) => {
-    merged.set(component.id, component);
-  });
-
-  return Array.from(merged.values());
-};
-
-export const buildPlan = (inputs: PlannerInputs): PlannerResponse => {
-  const contextText = inputs.ragContext.map((item) => item.content).join(" ");
-  const signalText = `${inputs.prompt} ${contextText}`;
-  const platformType = detectPlatform(signalText);
-
-  const hardwarePlatform: HardwarePlatform = {
-    type: platformType,
-    name: platformNames[platformType],
-    pinout: basePinouts[platformType],
-  };
-
-  const requirements = extractRequirements(inputs.prompt);
-  const matchedItems = keywordMap.filter((entry) =>
-    entry.keywords.some((keyword) => signalText.toLowerCase().includes(keyword)),
-  );
-
-  const sensors: Sensor[] = [];
-  const components: Component[] = [];
-  const libraries = new Set<string>();
-
-  matchedItems.forEach((entry) => {
-    if (entry.sensor) {
-      sensors.push({ ...entry.sensor, pins: [...entry.sensor.pins] });
-    }
-    if (entry.component) {
-      components.push(entry.component);
-    }
-    entry.libraries.forEach((library) => libraries.add(library));
-  });
-
-  if (sensors.length === 0) {
-    sensors.push({
-      id: "sensor-default",
-      name: "Generic Analog Sensor",
-      type: "analog",
-      description: "Placeholder analog sensor",
-      pins: [{ componentId: "sensor-default", pinName: "A0", platformPin: "" }],
-    });
-    components.push({
-      id: "sensor-default",
-      name: "Generic Analog Sensor",
-      type: "sensor",
-      description: "Placeholder analog sensor",
-      specifications: { interface: "analog" },
-      quantity: 1,
-    });
-  }
-
-  const neededPins = sensors.reduce((sum, sensor) => sum + sensor.pins.length, 0);
-  const assignedPins = assignPins(hardwarePlatform.pinout, neededPins);
-
-  let pinIndex = 0;
-  sensors.forEach((sensor) => {
-    sensor.pins = sensor.pins.map((pin) => ({
-      ...pin,
-      platformPin: assignedPins[pinIndex++] || hardwarePlatform.pinout[0].pinNumber,
-    }));
-  });
-
-  const wiringPlan: WiringPlan = {
-    connections: sensors.flatMap((sensor) =>
-      sensor.pins.map((pin) => ({
-        from: pin,
-        to: createPlatformAssignment(pin.platformPin),
-        type: pin.pinName === "A0" ? "analog" : "digital",
-      })),
-    ),
-    notes: [
-      "Provide stable power and ground rails shared across all components",
-      "Use pull-up resistors where required by digital sensors",
-    ],
-  };
-
-  const firmwareGoals = [
-    "Initialize hardware interfaces",
-    "Read sensor data at a fixed interval",
-    "Validate sensor values before use",
-  ];
-
-  if (components.some((component) => component.type === "actuator")) {
-    firmwareGoals.push("Drive actuators based on control rules");
-  }
-
-  const wiringStrategy =
-    "Connect each sensor signal line to unique GPIO or ADC pins and share common power and ground rails.";
-
-  const mergedComponents = mergeExistingComponents(components, inputs.projectState);
-
-  return {
-    projectRequirements: requirements.length > 0 ? requirements : [inputs.prompt],
-    hardwarePlatform,
-    sensors,
-    firmwareGoals,
-    requiredComponents: mergedComponents,
-    wiringPlan,
-    wiringStrategy,
-    libraries: Array.from(libraries),
-    simulationRequirements: {
-      duration: 10000,
-      inputSignals: [],
-      expectedOutputs: [],
-    },
-  };
-};

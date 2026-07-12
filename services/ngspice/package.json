@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "node scripts/build-ngspice.mjs && tsc",
+    "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build:ngspice:unix": "sh scripts/build-ngspice.sh",

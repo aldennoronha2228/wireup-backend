@@ -46,7 +46,7 @@ const velxioCatalogPath = join(
 
 let catalogCache: VelxioComponentMeta[] | null = null;
 
-const loadCatalog = async () => {
+const loadCatalog = async (): Promise<VelxioComponentMeta[]> => {
   if (catalogCache) return catalogCache;
   const raw = await readFile(velxioCatalogPath, "utf8");
   const parsed = JSON.parse(raw) as VelxioComponentCatalog;
@@ -96,13 +96,13 @@ const resolveVelxioComponent = async (component: Component, index: number) => {
   let best: VelxioComponentMeta | null = null;
   let bestScore = -1;
 
-  catalog.forEach((meta) => {
+  for (const meta of catalog) {
     const score = scoreMatch(component, meta);
     if (score > bestScore) {
       best = meta;
       bestScore = score;
     }
-  });
+  }
 
   const tagName = best?.tagName ?? "wokwi-led";
   const attrs = {

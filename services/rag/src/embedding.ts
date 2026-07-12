@@ -19,12 +19,17 @@ export const getEmbedding = async (text: string, config: RagConfig) => {
     return buildLocalEmbedding(text, config.embeddingDimension);
   }
 
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (config.embeddingApiKey) {
+    headers.Authorization = `Bearer ${config.embeddingApiKey}`;
+  }
+
   const response = await fetch(`${config.embeddingBaseUrl}/embeddings`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.embeddingApiKey}`,
-    },
+    headers,
     body: JSON.stringify({
       model: config.embeddingModel,
       input: text,

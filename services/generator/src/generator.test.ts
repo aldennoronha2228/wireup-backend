@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { buildGeneratorOutput } from "./generator.js";
+import { HardwarePlatformType } from "@wireup/types";
 import type { PlannerResponse } from "@wireup/types";
 
 const plan: PlannerResponse = {
   projectRequirements: ["Build a temperature logger"],
   hardwarePlatform: {
-    type: "esp32",
+    type: HardwarePlatformType.ESP32,
     name: "ESP32",
     pinout: [
       { pinNumber: "GPIO2", function: "GPIO", voltage: 3.3 },

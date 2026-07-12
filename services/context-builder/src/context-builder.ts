@@ -14,8 +14,12 @@ const normalize = (value: string) => value.trim().toLowerCase();
 
 const extractCitation = (item: RagContextItem) => {
   const metadata = item.metadata ?? {};
-  const title = metadata.documentTitle;
-  const source = metadata.documentSource;
+  const title = typeof (metadata as Record<string, unknown>).documentTitle === "string"
+    ? (metadata as Record<string, unknown>).documentTitle as string
+    : undefined;
+  const source = typeof (metadata as Record<string, unknown>).documentSource === "string"
+    ? (metadata as Record<string, unknown>).documentSource as string
+    : undefined;
   if (title || source) {
     return { title, source };
   }
@@ -73,7 +77,7 @@ export const buildOptimizedContext = (
 
     const citations = sorted
       .map(extractCitation)
-      .filter((citation): citation is { title?: unknown; source?: unknown } =>
+      .filter((citation): citation is { title: string | undefined; source: string | undefined } =>
         citation !== null,
       );
 
