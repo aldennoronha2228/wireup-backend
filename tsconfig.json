@@ -11,15 +11,7 @@
     "resolveJsonModule": true,
     "noEmit": true,
     "types": ["node"],
-    "ignoreDeprecations": "5.0",
-    "baseUrl": ".",
-    "paths": {
-      "@wireup/types": ["packages/types/dist/index.d.ts"],
-      "@wireup/utils": ["packages/utils/dist/index.d.ts"],
-      "@wireup/schemas": ["packages/schemas/dist/index.d.ts"],
-      "@wireup/shared": ["packages/shared/dist/index.d.ts"],
-      "@wireup/ngspice": ["services/ngspice/dist/index.js"]
-    }
+    "ignoreDeprecations": "5.0"
   },
   "exclude": ["node_modules"]
 }

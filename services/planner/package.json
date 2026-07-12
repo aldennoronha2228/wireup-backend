@@ -16,6 +16,7 @@
     "@wireup/config": "workspace:*",
     "@wireup/schemas": "workspace:*",
     "@wireup/types": "workspace:*",
+    "@wireup/utils": "workspace:*",
     "hono": "^4.5.0"
   },
   "devDependencies": {
