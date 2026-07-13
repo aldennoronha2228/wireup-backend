@@ -1,8 +1,13 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process";
-import { writeFile, rm } from "fs/promises";
+import { mkdir, writeFile, rm } from "fs/promises";
 import { tmpdir } from "os";
-import { join } from "path";
-import { getNgspiceExecutable, getNgspiceBatchArgs } from "./getNgspiceExecutable.js";
+import { join, resolve } from "path";
+import {
+  getNgspiceBatchArgs,
+  getNgspiceDiscoveryReport,
+  getNgspiceExecutable,
+  type NgspiceCandidate,
+} from "./getNgspiceExecutable.js";
 
 export interface NgspiceExecution {
   exitCode: number | null;
@@ -32,7 +37,15 @@ const trace = (
 
 export const runNgspice = async (netlist: string): Promise<NgspiceExecution> => {
   const bin = getNgspiceExecutable();
-  const filePath = join(tmpdir(), `wireup-ngspice-${Date.now()}.cir`);
+  const keepNetlist = process.env.NODE_ENV === "development";
+  const fileName = `wireup-ngspice-${Date.now()}.cir`;
+  const filePath = keepNetlist
+    ? resolve(process.cwd(), "tmp", "netlists", fileName)
+    : join(tmpdir(), fileName);
+  if (keepNetlist) {
+    await mkdir(resolve(process.cwd(), "tmp", "netlists"), { recursive: true });
+    console.log(`Generated SPICE netlist:\n${netlist}`);
+  }
   await writeFile(filePath, netlist, "utf8");
 
   return new Promise((resolve) => {
@@ -65,7 +78,7 @@ export const runNgspice = async (netlist: string): Promise<NgspiceExecution> => 
 
     child.on("close", async (code: number | null) => {
       clearTimeout(timer);
-      await rm(filePath, { force: true });
+      if (!keepNetlist) await rm(filePath, { force: true });
       trace("runNgspice", "process_closed", {
         success: code === 0,
         exitCode: code,
@@ -77,7 +90,7 @@ export const runNgspice = async (netlist: string): Promise<NgspiceExecution> => 
 
     child.on("error", async (error: Error) => {
       clearTimeout(timer);
-      await rm(filePath, { force: true });
+      if (!keepNetlist) await rm(filePath, { force: true });
       trace("runNgspice", "process_error", {
         success: false,
         executablePath: bin,
@@ -93,19 +106,41 @@ export const runNgspice = async (netlist: string): Promise<NgspiceExecution> => 
 /**
  * Run a self-test to check NGSpice availability and version.
  */
-export async function testNgspiceExecutable(): Promise<{ path: string; exitCode: number | null; stdout: string; stderr: string }> {
+export async function testNgspiceExecutable(): Promise<{
+  path: string;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  candidates: NgspiceCandidate[];
+}> {
   try {
-    const bin = getNgspiceExecutable();
-    return await new Promise((resolve) => {
-      const child = spawn(bin, ["-v"]) as ChildProcessWithoutNullStreams;
-      let stdout = "";
-      let stderr = "";
-      child.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
-      child.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
-      child.on("close", (code: number | null) => resolve({ path: bin, exitCode: code, stdout, stderr }));
-      child.on("error", (err: Error) => resolve({ path: bin, exitCode: null, stdout: "", stderr: String(err) }));
-    });
+    const report = getNgspiceDiscoveryReport();
+    const selected = report.selected;
+
+    if (!selected) {
+      return {
+        path: "",
+        exitCode: null,
+        stdout: "",
+        stderr: "NGSpice executable not found.",
+        candidates: report.candidates,
+      };
+    }
+
+    return {
+      path: selected.resolvedPath,
+      exitCode: selected.exitCode,
+      stdout: selected.stdout,
+      stderr: selected.stderr || selected.error || "",
+      candidates: report.candidates,
+    };
   } catch (err) {
-    return Promise.resolve({ path: "", exitCode: null, stdout: "", stderr: (err instanceof Error ? err.message : String(err)) });
+    return Promise.resolve({
+      path: "",
+      exitCode: null,
+      stdout: "",
+      stderr: err instanceof Error ? err.message : String(err),
+      candidates: [],
+    });
   }
 }

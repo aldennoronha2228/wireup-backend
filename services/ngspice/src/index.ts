@@ -2,6 +2,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { getAppConfig, loadEnvironment } from "@wireup/config";
+import { relative } from "path";
 import { pathToFileURL } from "url";
 import { NgspiceRequestSchema, type NgspiceResponse } from "./schema.js";
 import { NgspiceService } from "./service.js";
@@ -125,10 +126,31 @@ const startServer = () => {
     try {
       const { testNgspiceExecutable } = await import("./ngspice.js");
       const result = await testNgspiceExecutable();
+      for (const candidate of result.candidates) {
+        logger.info("ngspice_discovery_candidate", {
+          path: candidate.path,
+          resolvedPath: candidate.resolvedPath,
+          source: candidate.source,
+          exists: candidate.exists,
+          verified: candidate.verified,
+          exitCode: candidate.exitCode,
+          stdout: candidate.stdout,
+          stderr: candidate.stderr || candidate.error,
+        });
+      }
       if (result && result.path) {
-        logger.info("ngspice_check", { path: result.path, exitCode: result.exitCode, stdout: result.stdout });
+        logger.info("ngspice_executable_found", {
+          message: "NGSpice executable found",
+          path: relative(process.cwd(), result.path) || result.path,
+          finalResolvedPath: result.path,
+          exitCode: result.exitCode,
+          version: result.stdout || result.stderr,
+        });
       } else {
-        logger.warn("ngspice_missing", { error: result.stderr });
+        logger.warn("ngspice_missing", {
+          message: "NGSpice executable not found.",
+          error: result.stderr,
+        });
       }
     } catch (err) {
       logger.warn("ngspice_check_failed", { error: err instanceof Error ? err.message : String(err) });

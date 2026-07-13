@@ -3,6 +3,9 @@ import type { NgspiceRequest } from "./schema.js";
 interface Issue {
   code: string;
   message: string;
+  componentId?: string;
+  pinName?: string;
+  node?: string;
   details?: Record<string, unknown>;
 }
 
@@ -25,56 +28,16 @@ export const analyzeCircuit = (
   const warnings: Issue[] = [];
   const suggestedFixes: string[] = [];
 
-  const nodeDegree = new Map<string, number>();
-  const nodeTypes = new Map<string, Set<string>>();
-
-  request.connections.forEach((connection) => {
-    const node = connection.from.platformPin || connection.to.platformPin || connection.from.pinName;
-    nodeDegree.set(node, (nodeDegree.get(node) ?? 0) + 1);
-    const types = nodeTypes.get(node) ?? new Set();
-    types.add(connection.type);
-    nodeTypes.set(node, types);
-  });
-
-  const floatingNodes = Array.from(nodeDegree.entries())
-    .filter(([, degree]) => degree < 2)
-    .map(([node]) => node);
-
-  if (floatingNodes.length > 0) {
-    errors.push({
-      code: "FLOATING_NODES",
-      message: "Floating nodes detected",
-      details: { nodes: floatingNodes },
-    });
-    suggestedFixes.push("Tie floating nodes to a reference or load.");
-  }
-
-  const shortedNodes = Array.from(nodeTypes.entries())
-    .filter(([, types]) => types.has("power") && types.has("ground"))
-    .map(([node]) => node);
-
-  if (shortedNodes.length > 0) {
-    errors.push({
-      code: "SHORT_CIRCUIT",
-      message: "Power and ground short detected",
-      details: { nodes: shortedNodes },
-    });
-    suggestedFixes.push("Separate power and ground nets.");
-  }
-
-  const hasGround = Array.from(nodeTypes.values()).some((types) => types.has("ground"));
-  if (!hasGround) {
-    errors.push({
-      code: "MISSING_GROUND",
-      message: "Missing ground connection",
-    });
-    suggestedFixes.push("Connect all components to a common ground.");
-  }
-
   if (ngspiceOutput.toLowerCase().includes("singular matrix")) {
+    const nodeMatch = ngspiceOutput.match(/singular matrix:\s*check node\s+([^\s]+)/i);
+    const node = nodeMatch?.[1];
     errors.push({
       code: "OPEN_CIRCUIT",
-      message: "Open circuit detected by ngspice",
+      message: node
+        ? `Open circuit detected by ngspice near node ${node}.`
+        : "Open circuit detected by ngspice.",
+      node,
+      details: { node },
     });
     suggestedFixes.push("Check continuity across all nets.");
   }

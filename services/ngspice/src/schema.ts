@@ -38,6 +38,9 @@ export const NgspiceRequestSchema = z.object({
 export const NgspiceIssueSchema = z.object({
   code: z.string(),
   message: z.string(),
+  componentId: z.string().optional(),
+  pinName: z.string().optional(),
+  node: z.string().optional(),
   details: z.record(z.unknown()).optional(),
 });
 

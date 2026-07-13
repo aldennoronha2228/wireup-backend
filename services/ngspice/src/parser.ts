@@ -16,28 +16,62 @@ export const parseNgspiceOutput = (output: string): ParsedResult => {
 
   const lines = output.split("\n");
   let inVoltageSection = false;
+  let inCurrentSection = false;
+  let currentRowsSeen = false;
 
   lines.forEach((line) => {
+    const trimmed = line.trim();
+    const lower = trimmed.toLowerCase();
+
     if (line.toLowerCase().includes("warning")) {
-      warnings.push(line.trim());
+      warnings.push(trimmed);
     }
 
-    if (line.toLowerCase().includes("node voltages")) {
+    if (lower.includes("node voltages") || (lower.startsWith("node") && lower.includes("voltage"))) {
       inVoltageSection = true;
+      inCurrentSection = false;
+      return;
+    }
+
+    if (lower.startsWith("source") && lower.includes("current")) {
+      inCurrentSection = true;
+      inVoltageSection = false;
+      currentRowsSeen = false;
       return;
     }
 
     if (inVoltageSection) {
-      if (line.trim() === "") {
+      if (trimmed === "") {
         inVoltageSection = false;
         return;
       }
-      const parts = line.trim().split(/\s+/);
+
+      const parts = trimmed.split(/\s+/);
       if (parts.length >= 2) {
         const name = parts[0];
         const value = parseNumber(parts[1]);
-        if (value !== null) {
+        if (value !== null && name !== "----") {
           voltages[name] = value;
+        }
+      }
+    }
+
+    if (inCurrentSection) {
+      if (trimmed === "") {
+        if (currentRowsSeen) inCurrentSection = false;
+        return;
+      }
+
+      const parts = trimmed.split(/\s+/);
+      if (parts.length >= 2) {
+        const name = parts[0];
+        const value = parseNumber(parts[1]);
+        if (value !== null && name !== "------") {
+          currents[name] = value;
+          if (name.toLowerCase().endsWith("#branch")) {
+            currents[name.replace(/#branch$/i, "")] = value;
+          }
+          currentRowsSeen = true;
         }
       }
     }

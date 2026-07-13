@@ -34,27 +34,6 @@ const errorPayload = (method: string, error: unknown, payload: unknown) => ({
   payload,
 });
 
-const explainNetlistReadiness = (
-  request: NgspiceRequest,
-  netlist: string,
-) => {
-  const reasons: string[] = [];
-
-  if (!request.components.length) reasons.push("request.components is empty");
-  if (!request.connections.length) reasons.push("request.connections is empty");
-  if (!netlist.trim()) reasons.push("netlist string is empty");
-  if (!netlist.includes(".op")) reasons.push("netlist does not include .op analysis");
-  if (!netlist.includes(".end")) reasons.push("netlist does not include .end terminator");
-  if (!/^[RCDV]_/m.test(netlist)) {
-    reasons.push("netlist contains no recognized passive, diode, or voltage-source primitive");
-  }
-  if (!netlist.includes("V_VCC")) {
-    reasons.push("netlist has no VCC voltage source; no power rail was detected from connections");
-  }
-
-  return reasons;
-};
-
 export class NgspiceService implements NgspiceServiceLike {
   constructor(private readonly runner: NgspiceRunner = runNgspice) {}
 
@@ -69,34 +48,58 @@ export class NgspiceService implements NgspiceServiceLike {
     });
 
     try {
-      const { netlist } = buildNetlist(request);
+      const build = buildNetlist(request);
+      const { netlist } = build;
       trace("validate", "generated_netlist", {
         success: Boolean(netlist),
         netlist,
+        nodeMap: Object.fromEntries(build.endpointToNet),
       });
 
-      const netlistReasons = explainNetlistReadiness(request, netlist);
-      if (netlistReasons.length > 0) {
-        trace("validate", "netlist_readiness", {
-          success: false,
-          reason: "Generated netlist may not be executable or meaningful",
-          reasons: netlistReasons,
-          request,
-          netlist,
-        });
-      }
-
       const issues = {
-        errors: [] as NgspiceResponse["errors"],
-        warnings: [] as NgspiceResponse["warnings"],
+        errors: [...build.errors] as NgspiceResponse["errors"],
+        warnings: [...build.warnings] as NgspiceResponse["warnings"],
       };
 
       if (!netlist) {
         issues.errors.push({
           code: "NETLIST_EMPTY",
           message: "Netlist could not be generated",
-          details: { reasons: netlistReasons },
         });
+      }
+
+      if (issues.errors.length > 0) {
+        if (process.env.NODE_ENV === "development") {
+          console.log(`Generated SPICE netlist:\n${netlist}`);
+        }
+        trace("validate", "preflight_failed", {
+          success: false,
+          errors: issues.errors,
+          warnings: issues.warnings,
+          netlist,
+        });
+
+        const response = {
+          errors: issues.errors,
+          warnings: issues.warnings,
+          voltages: {},
+          currents: {},
+          summary: {
+            status: "invalid",
+            totalErrors: issues.errors.length,
+            totalWarnings: issues.warnings.length,
+            ngspiceExitCode: null,
+            suggestedFixes: suggestFixes(issues.errors),
+          },
+        } satisfies NgspiceResponse;
+
+        trace("validate", "final_response", {
+          success: false,
+          durationMs: Date.now() - startedAt,
+          response,
+        });
+        console.log(`[NGSpice] completed in ${Date.now() - startedAt} ms`);
+        return response;
       }
 
       const result = await this.runner(netlist);
@@ -185,3 +188,17 @@ export class NgspiceService implements NgspiceServiceLike {
     }
   }
 }
+
+const suggestFixes = (errors: NgspiceResponse["errors"]) => {
+  const fixes = new Set<string>();
+
+  for (const error of errors) {
+    if (error.code === "MISSING_GROUND") fixes.add("Connect the circuit to a ground pin so SPICE can use node 0.");
+    if (error.code === "FLOATING_NODE") fixes.add("Tie floating nodes to another component, VCC, or ground.");
+    if (error.code === "OPEN_CIRCUIT") fixes.add("Create a complete path between VCC and ground through connected components.");
+    if (error.code === "SHORT_CIRCUIT") fixes.add("Separate the power rail from ground.");
+    if (error.code === "MISSING_TERMINAL") fixes.add("Connect all required terminals for each simulated component.");
+  }
+
+  return Array.from(fixes);
+};
