@@ -29,11 +29,46 @@ const app = new Hono();
 app.use("*", cors());
 app.use("*", ...createCommonMiddleware(runtimeConfig, logger, metrics));
 
+const trace = (
+  method: string,
+  event: string,
+  payload: Record<string, unknown> = {},
+) => {
+  console.log(
+    JSON.stringify({
+      service: "simulator",
+      timestamp: new Date().toISOString(),
+      method,
+      event,
+      ...payload,
+    }),
+  );
+};
+
+const errorPayload = (method: string, error: unknown, payload: unknown) => ({
+  service: "simulator",
+  method,
+  message: error instanceof Error ? error.message : String(error),
+  stack: error instanceof Error ? error.stack : undefined,
+  payload,
+});
+
 app.post("/api/simulator/run", async (c) => {
+  const startedAt = Date.now();
   const body = await c.req.json();
+  trace("POST /api/simulator/run", "request_received", {
+    success: true,
+    request: body,
+  });
+
   const parsed = SimulatorRequestSchema.safeParse(body);
 
   if (!parsed.success) {
+    trace("POST /api/simulator/run", "response_returned", {
+      success: false,
+      durationMs: Date.now() - startedAt,
+      error: parsed.error.flatten(),
+    });
     return c.json(
       {
         success: false,
@@ -52,6 +87,11 @@ app.post("/api/simulator/run", async (c) => {
   });
 
   if (!parsed.data.projectId) {
+    trace("POST /api/simulator/run", "response_returned", {
+      success: false,
+      durationMs: Date.now() - startedAt,
+      reason: "projectId is required to run Velxio simulations",
+    });
     return c.json(
       {
         success: false,
@@ -70,6 +110,11 @@ app.post("/api/simulator/run", async (c) => {
     );
 
     if (!project.generatorOutput) {
+      trace("POST /api/simulator/run", "response_returned", {
+        success: false,
+        durationMs: Date.now() - startedAt,
+        reason: "Generator output not found for project",
+      });
       return c.json(
         {
           success: false,
@@ -83,6 +128,12 @@ app.post("/api/simulator/run", async (c) => {
     }
 
     if (!project.validatorOutput || !project.validatorOutput.isValid) {
+      trace("POST /api/simulator/run", "response_returned", {
+        success: false,
+        durationMs: Date.now() - startedAt,
+        reason: "Project must pass validation before simulation",
+        validatorOutput: project.validatorOutput,
+      });
       return c.json(
         {
           success: false,
@@ -109,8 +160,21 @@ app.post("/api/simulator/run", async (c) => {
       assets,
     );
 
+    trace("POST /api/simulator/run", "response_returned", {
+      success: true,
+      durationMs: Date.now() - startedAt,
+      response,
+    });
+    console.log(`[Simulator] completed in ${Date.now() - startedAt} ms`);
+
     return c.json({ success: true, data: response } satisfies ApiResponse<SimulatorResponse>);
   } catch (error) {
+    trace("POST /api/simulator/run", "exception", {
+      success: false,
+      durationMs: Date.now() - startedAt,
+      error: errorPayload("POST /api/simulator/run", error, body),
+    });
+    console.log(`[Simulator] completed in ${Date.now() - startedAt} ms`);
     return c.json(
       {
         success: false,

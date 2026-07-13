@@ -127,6 +127,7 @@ export interface Component {
   id: string;
   name: string;
   type: "sensor" | "actuator" | "power" | "other";
+  category: string;
   description: string;
   specifications: Record<string, unknown>;
   quantity: number;

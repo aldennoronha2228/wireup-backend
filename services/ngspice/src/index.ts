@@ -31,11 +31,46 @@ const app = new Hono();
 app.use("*", cors());
 app.use("*", ...createCommonMiddleware(runtimeConfig, logger, metrics));
 
+const trace = (
+  method: string,
+  event: string,
+  payload: Record<string, unknown> = {},
+) => {
+  console.log(
+    JSON.stringify({
+      service: "ngspice",
+      timestamp: new Date().toISOString(),
+      method,
+      event,
+      ...payload,
+    }),
+  );
+};
+
+const errorPayload = (method: string, error: unknown, payload: unknown) => ({
+  service: "ngspice",
+  method,
+  message: error instanceof Error ? error.message : String(error),
+  stack: error instanceof Error ? error.stack : undefined,
+  payload,
+});
+
 app.post("/api/ngspice/validate", async (c) => {
+  const startedAt = Date.now();
   const body = await c.req.json();
+  trace("POST /api/ngspice/validate", "request_received", {
+    success: true,
+    request: body,
+  });
+
   const parsed = NgspiceRequestSchema.safeParse(body);
 
   if (!parsed.success) {
+    trace("POST /api/ngspice/validate", "response_returned", {
+      success: false,
+      durationMs: Date.now() - startedAt,
+      error: parsed.error.flatten(),
+    });
     return c.json(
       {
         errors: [
@@ -59,9 +94,25 @@ app.post("/api/ngspice/validate", async (c) => {
     );
   }
 
-  const response = await ngspiceService.validate(parsed.data);
+  try {
+    const response = await ngspiceService.validate(parsed.data);
+    trace("POST /api/ngspice/validate", "response_returned", {
+      success: response.summary.status === "valid",
+      durationMs: Date.now() - startedAt,
+      response,
+    });
+    console.log(`[NGSpice] completed in ${Date.now() - startedAt} ms`);
 
-  return c.json(response satisfies NgspiceResponse);
+    return c.json(response satisfies NgspiceResponse);
+  } catch (error) {
+    trace("POST /api/ngspice/validate", "exception", {
+      success: false,
+      durationMs: Date.now() - startedAt,
+      error: errorPayload("POST /api/ngspice/validate", error, body),
+    });
+    console.log(`[NGSpice] completed in ${Date.now() - startedAt} ms`);
+    throw error;
+  }
 });
 
 registerHealthRoutes(app, serviceName);

@@ -27,13 +27,48 @@ const app = new Hono();
 app.use("*", cors());
 app.use("*", ...createCommonMiddleware(runtimeConfig, logger, metrics));
 
+const trace = (
+  method: string,
+  event: string,
+  payload: Record<string, unknown> = {},
+) => {
+  console.log(
+    JSON.stringify({
+      service: "generator",
+      timestamp: new Date().toISOString(),
+      method,
+      event,
+      ...payload,
+    }),
+  );
+};
+
+const errorPayload = (method: string, error: unknown, payload: unknown) => ({
+  service: "generator",
+  method,
+  message: error instanceof Error ? error.message : String(error),
+  stack: error instanceof Error ? error.stack : undefined,
+  payload,
+});
+
 
 
 app.post("/api/generator/generate", async (c) => {
+  const startedAt = Date.now();
   const body = await c.req.json();
+  trace("POST /api/generator/generate", "request_received", {
+    success: true,
+    request: body,
+  });
+
   const parsed = GeneratorRequestSchema.safeParse(body);
 
   if (!parsed.success) {
+    trace("POST /api/generator/generate", "response_returned", {
+      success: false,
+      durationMs: Date.now() - startedAt,
+      error: parsed.error.flatten(),
+    });
     return c.json(
       {
         success: false,
@@ -47,9 +82,25 @@ app.post("/api/generator/generate", async (c) => {
     );
   }
 
-  const response: GeneratorResponse = buildGeneratorOutput(parsed.data.plannerOutput);
+  try {
+    const response: GeneratorResponse = buildGeneratorOutput(parsed.data.plannerOutput);
+    trace("POST /api/generator/generate", "response_returned", {
+      success: true,
+      durationMs: Date.now() - startedAt,
+      response,
+    });
+    console.log(`[Generator] completed in ${Date.now() - startedAt} ms`);
 
-  return c.json({ success: true, data: response } satisfies ApiResponse<GeneratorResponse>);
+    return c.json({ success: true, data: response } satisfies ApiResponse<GeneratorResponse>);
+  } catch (error) {
+    trace("POST /api/generator/generate", "exception", {
+      success: false,
+      durationMs: Date.now() - startedAt,
+      error: errorPayload("POST /api/generator/generate", error, body),
+    });
+    console.log(`[Generator] completed in ${Date.now() - startedAt} ms`);
+    throw error;
+  }
 });
 
 registerHealthRoutes(app, serviceName);

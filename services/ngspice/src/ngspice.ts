@@ -8,9 +8,27 @@ export interface NgspiceExecution {
   exitCode: number | null;
   stdout: string;
   stderr: string;
+  executablePath?: string;
+  command?: string;
 }
 
 const timeoutMs = Number(process.env.NGSPICE_TIMEOUT_MS) || 8000;
+
+const trace = (
+  method: string,
+  event: string,
+  payload: Record<string, unknown> = {},
+) => {
+  console.log(
+    JSON.stringify({
+      service: "ngspice",
+      timestamp: new Date().toISOString(),
+      method,
+      event,
+      ...payload,
+    }),
+  );
+};
 
 export const runNgspice = async (netlist: string): Promise<NgspiceExecution> => {
   const bin = getNgspiceExecutable();
@@ -19,6 +37,17 @@ export const runNgspice = async (netlist: string): Promise<NgspiceExecution> => 
 
   return new Promise((resolve) => {
     const args = getNgspiceBatchArgs(filePath);
+    const command = [bin, ...args].join(" ");
+    trace("runNgspice", "executable_selected", {
+      success: true,
+      executablePath: bin,
+      netlistPath: filePath,
+    });
+    trace("runNgspice", "command_executed", {
+      success: true,
+      command,
+      timeoutMs,
+    });
     const child = spawn(bin, args) as ChildProcessWithoutNullStreams;
     let stdout = "";
     let stderr = "";
@@ -37,13 +66,26 @@ export const runNgspice = async (netlist: string): Promise<NgspiceExecution> => 
     child.on("close", async (code: number | null) => {
       clearTimeout(timer);
       await rm(filePath, { force: true });
-      resolve({ exitCode: code, stdout, stderr });
+      trace("runNgspice", "process_closed", {
+        success: code === 0,
+        exitCode: code,
+        stdout,
+        stderr,
+      });
+      resolve({ exitCode: code, stdout, stderr, executablePath: bin, command });
     });
 
     child.on("error", async (error: Error) => {
       clearTimeout(timer);
       await rm(filePath, { force: true });
-      resolve({ exitCode: null, stdout: "", stderr: String(error) });
+      trace("runNgspice", "process_error", {
+        success: false,
+        executablePath: bin,
+        command,
+        stack: error.stack,
+        stderr: String(error),
+      });
+      resolve({ exitCode: null, stdout: "", stderr: String(error), executablePath: bin, command });
     });
   });
 };

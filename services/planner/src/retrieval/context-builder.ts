@@ -41,6 +41,7 @@ export function contextToComponents(context: HardwareContext): {
       id: comp.id,
       name: comp.name,
       type: "sensor",
+      category: comp.type,
       description: `${comp.name} (${(comp.confidence * 100).toFixed(0)}% confidence) - Sources: ${comp.sources.join(", ")}`,
       specifications: {
         ...comp.specifications,
@@ -60,6 +61,7 @@ export function contextToComponents(context: HardwareContext): {
       id: lib.id,
       name: lib.name,
       type: "other",
+      category: "firmware-library",
       description: `${lib.reason} - Sources: ${lib.sources.slice(0, 3).join(", ")}`,
       specifications: {
         confidence: lib.confidence,
@@ -76,6 +78,7 @@ export function contextToComponents(context: HardwareContext): {
         id: `protocol-${pinMapping.protocol}`,
         name: `${pinMapping.protocol} Bus`,
         type: "other",
+        category: "communication-bus",
         description: `${pinMapping.protocol} communication (${pinMapping.pinName})`,
         specifications: {
           protocol: pinMapping.protocol,

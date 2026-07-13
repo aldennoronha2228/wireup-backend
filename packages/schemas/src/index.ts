@@ -160,6 +160,7 @@ export const ComponentSchema = z.object({
   id: z.string(),
   name: z.string(),
   type: z.enum(["sensor", "actuator", "power", "other"]),
+  category: z.string(),
   description: z.string(),
   specifications: z.record(z.unknown()),
   quantity: z.number().int().positive(),
